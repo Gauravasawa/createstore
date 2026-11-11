@@ -66,7 +66,7 @@ Accounts: use a passkey or hardware key for 2FA on GitHub and npm, and keep the 
 - **Malicious pull request.** Workflows use `pull_request`, never `pull_request_target`. Pull requests from forks
   get a read-only token, no secrets and no OIDC. Changes to `.github/` need CODEOWNER review.
 - **Stolen maintainer account.** 2FA with a passkey, no tokens to steal, a required reviewer on the release
-  environment, and tag rules. Recovery steps belong to the disaster-recovery runbook (not written yet).
+  environment, and tag rules. Recovery steps are in [RECOVERY.md](../RECOVERY.md).
 - **Consumers verifying a release.** Running `npm audit signatures` in a project that depends on this package
   confirms the registry signature and the provenance attestation.
 

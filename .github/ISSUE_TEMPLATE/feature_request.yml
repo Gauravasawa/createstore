@@ -1,0 +1,32 @@
+name: Feature request
+description: Suggest an addition or change
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What are you trying to do that is hard or impossible today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: What would you like to write in your code? An API sketch helps.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you considered
+  - type: dropdown
+    id: breaking
+    attributes:
+      label: Would it break existing code?
+      options:
+        - No
+        - Yes
+        - Not sure
+    validations:
+      required: true

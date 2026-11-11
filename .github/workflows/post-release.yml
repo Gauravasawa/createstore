@@ -1,0 +1,44 @@
+name: Post-release check
+
+# Installs the published package from the real registry and proves it loads and carries a valid signature and
+# provenance. It runs daily and on demand, not on the release event: a release created by the workflow's own token
+# does not trigger other workflows, and workflow_run is a trigger this repository's workflow linter rejects.
+# After a release, run it by hand (Actions, Post-release check, Run workflow) instead of waiting a day.
+on:
+  schedule:
+    - cron: '17 6 * * *'
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  registry:
+    name: Install from the registry
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions: {}
+    steps:
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      - name: Install the latest release and load it
+        run: |
+          V=$(npm view @createstore/createstore dist-tags.latest 2>/dev/null || true)
+          if [ -z "$V" ]; then
+            echo "::notice::No release on the latest tag yet; nothing to check."
+            exit 0
+          fi
+          echo "Checking $V"
+          mkdir check && cd check
+          npm init -y > /dev/null
+          # The registry can lag a few minutes behind a publish: retry before failing
+          for i in 1 2 3 4 5; do
+            npm install --ignore-scripts "@createstore/createstore@$V" react@19 && break
+            [ "$i" = 5 ] && exit 1
+            sleep 30
+          done
+          # Registry signature and the provenance attestation of everything installed
+          npm audit signatures
+          node --input-type=module -e "import { createStore } from '@createstore/createstore'; if (typeof createStore !== 'function') process.exit(1)"
+          node -e "if (typeof require('@createstore/createstore').createStore !== 'function') process.exit(1)"
+          echo "### Post-release check passed for $V" >> "$GITHUB_STEP_SUMMARY"

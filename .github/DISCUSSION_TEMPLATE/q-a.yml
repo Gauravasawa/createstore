@@ -1,0 +1,15 @@
+title: '[Question] '
+labels: [question]
+body:
+  - type: textarea
+    id: question
+    attributes:
+      label: Your question
+      description: What are you trying to do, and what have you tried?
+    validations:
+      required: true
+  - type: textarea
+    id: code
+    attributes:
+      label: Code and versions
+      description: A short snippet, plus the versions of this package, React and Node.

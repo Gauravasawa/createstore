@@ -117,5 +117,5 @@ npm versions are immutable, and `npm unpublish` breaks everyone who already depe
 2. **Warn installers.** `npm deprecate @createstore/createstore@<bad> "Broken: use <good> or >=<fixed>"`.
 3. **Fix forward.** Revert or fix on `main` with a `fix:` commit; the pipeline publishes the patch.
 
-Recovery from a compromised token or account, a registry outage and leaked secrets is not written yet; it is the
-disaster-recovery phase of this setup.
+Recovery from a compromised account, a corrupted package, a registry outage, a broken docs deployment and leaked
+secrets is in [RECOVERY.md](./RECOVERY.md).
