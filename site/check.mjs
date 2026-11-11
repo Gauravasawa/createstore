@@ -33,6 +33,7 @@ const allowed = [
   'https://schema.org',
   'https://opensource.org/license/mit',
   'https://github.com/Gauravasawa/createstore',
+  'https://www.npmjs.com/package/@createstore/createstore',
   'http://www.w3.org/2000/svg',
   'http://www.sitemaps.org/schemas/sitemap/0.9',
 ];
