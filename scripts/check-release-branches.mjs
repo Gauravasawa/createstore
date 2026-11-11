@@ -16,8 +16,9 @@ const root = mkdtempSync(join(tmpdir(), 'cs-release-'));
 const origin = join(root, 'origin.git');
 const work = join(root, 'work');
 const URL = 'https://github.com/test/repo.git';
+// Inside GitHub Actions, semantic-release would read the branch from GITHUB_REF* instead of this throwaway repo
 const env = {
-  ...process.env,
+  ...Object.fromEntries(Object.entries(process.env).filter(([k]) => !/^(GITHUB_|CI$)/.test(k))),
   GIT_AUTHOR_NAME: 't',
   GIT_AUTHOR_EMAIL: 't@t.t',
   GIT_COMMITTER_NAME: 't',

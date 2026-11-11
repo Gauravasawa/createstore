@@ -1,5 +1,7 @@
 export default {
   extends: ['@commitlint/config-conventional'],
+  // Dependabot writes "Bump x" (capital B); its titles are generated, not ours to fix
+  ignores: [(msg) => msg.includes('Signed-off-by: dependabot[bot]')],
   rules: {
     'type-enum': [
       2,
