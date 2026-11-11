@@ -1,0 +1,68 @@
+name: Release
+
+# semantic-release creates the version tag, so tags are the output of this workflow, never its trigger
+# (a tag trigger would loop). Only branches listed in release.config.mjs can release; any other push is a no-op.
+on:
+  push:
+    branches:
+      - main
+      - next
+      - beta
+      - alpha
+      - '[0-9]+.x'
+      - '[0-9]+.[0-9]+.x'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Dry run (decide the version and check credentials; publish nothing)
+        type: boolean
+        default: true
+
+permissions: {}
+
+# Never cancel a release that is already running: a half-finished publish is the worst outcome.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Release
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # Optional protection: add required reviewers to this environment in the repo settings to gate every publish.
+    environment: release
+    permissions:
+      contents: write # push the version commit and tag, create the GitHub release
+      id-token: write # npm trusted publishing (OIDC) and provenance: no npm token is stored anywhere
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # semantic-release reads the whole history and the tags
+          persist-credentials: false
+      # No dependency cache in this job: a poisoned cache must never reach a publish.
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+      - run: npm ci --ignore-scripts
+      - run: npm audit signatures
+      # Everything CI checks, on the exact commit being released
+      - run: npm run verify
+      - run: npm run test:release
+      # The tarball that would ship: contents, exports targets, size budget, no credentials
+      - run: npm run check:publish
+      # ...and it installs and loads under npm, pnpm, yarn, bun and deno
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+      - run: corepack enable pnpm
+      - run: npm run test:install
+      - name: Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HUSKY: '0' # no git hooks on the release bot's commit
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
+        run: |
+          if [ "$DRY_RUN" = "true" ]; then
+            npx --no-install semantic-release --dry-run
+          else
+            npx --no-install semantic-release
+          fi

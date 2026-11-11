@@ -1,0 +1,11 @@
+# Changes to anything that builds, tests, signs or publishes the package need the owner's review.
+# With more maintainers, replace the user with a team (for example @org/maintainers).
+/.github/                     @Gauravasawa
+/scripts/                     @Gauravasawa
+/release.config.mjs           @Gauravasawa
+/package.json                 @Gauravasawa
+/package-lock.json            @Gauravasawa
+/.husky/                      @Gauravasawa
+/commitlint.config.js         @Gauravasawa
+/RELEASING.md                 @Gauravasawa
+/site/                        @Gauravasawa

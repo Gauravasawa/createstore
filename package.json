@@ -1,0 +1,115 @@
+{
+  "name": "@createstore/createstore",
+  "version": "0.0.0",
+  "description": "Global state that works like useState: no provider, no reducers. Optional queries, persist, offline, history, tab sync and server rendering.",
+  "license": "MIT",
+  "author": "Gaurav Asawa",
+  "keywords": [
+    "react",
+    "state",
+    "store",
+    "global-state",
+    "ssr",
+    "nextjs",
+    "server-components"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Gauravasawa/createstore.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Gauravasawa/createstore/issues"
+  },
+  "homepage": "https://github.com/Gauravasawa/createstore#readme",
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/cjs/createStore.cjs",
+  "module": "./dist/esm/createStore.js",
+  "types": "./dist/types/createStore.d.ts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/types/createStore.d.ts",
+        "default": "./dist/esm/createStore.js"
+      },
+      "require": {
+        "types": "./dist/types/createStore.d.cts",
+        "default": "./dist/cjs/createStore.cjs"
+      }
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "LICENSE",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "peerDependencies": {
+    "react": ">=19"
+  },
+  "scripts": {
+    "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
+    "build": "npm run clean && tsup && tsc -p tsconfig.build.json && node scripts/cjs-types.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "npm run test:smoke && npm run test:unit",
+    "verify": "npm run lint && npm run format:check && npm run typecheck && npm run build && node scripts/check-exports.mjs && npm test && npm run check:package",
+    "test:smoke": "node --test",
+    "test:unit": "vitest run",
+    "test:install": "node scripts/install-matrix.mjs",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "audit:prod": "npm audit --omit=dev --audit-level=high",
+    "check:package": "publint && attw --pack .",
+    "prepare": "husky || true",
+    "commitlint": "commitlint",
+    "test:release": "node scripts/check-release-branches.mjs",
+    "release": "semantic-release",
+    "check:publish": "node scripts/check-publish.mjs",
+    "prepublishOnly": "node scripts/check-publish.mjs",
+    "check:lockfile": "node scripts/check-lockfile.mjs",
+    "docs:build": "node site/build.mjs",
+    "docs:check": "node site/check.mjs",
+    "docs:browser": "node site/browser-check.mjs"
+  },
+  "devDependencies": {
+    "@arethetypeswrong/cli": "^0.18.5",
+    "@commitlint/cli": "^21.2.4",
+    "@commitlint/config-conventional": "^21.2.4",
+    "@edge-runtime/vm": "^5.0.0",
+    "@eslint/js": "^9.39.5",
+    "@semantic-release/changelog": "^6.0.3",
+    "@semantic-release/git": "^10.0.1",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.3.0",
+    "conventional-changelog-conventionalcommits": "^8.0.0",
+    "esbuild": "^0.28.2",
+    "eslint": "^9.39.5",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^17.14.0",
+    "husky": "^9.1.7",
+    "jsdom": "^26.1.0",
+    "playwright-core": "^1.65.0",
+    "prettier": "^3.9.10",
+    "publint": "^0.3.25",
+    "react": "^19.0.0",
+    "react-dom": "^19.3.1",
+    "semantic-release": "^25.0.9",
+    "tsup": "^8.5.0",
+    "typescript": "^5.9.0",
+    "typescript-eslint": "^8.72.2",
+    "vitest": "^5.1.0"
+  },
+  "overrides": {
+    "esbuild": "$esbuild"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/",
+    "provenance": true
+  }
+}

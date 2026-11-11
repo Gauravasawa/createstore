@@ -1,0 +1,3 @@
+Atkinson Hyperlegible, Bricolage Grotesque and IBM Plex Mono are licensed under the SIL Open Font License 1.1
+(https://openfontlicense.org), as listed on Google Fonts, and are served from this site (Latin subset).
+Prism 1.29.0 (MIT) is in ../prism, with its licence.
