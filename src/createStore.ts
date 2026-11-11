@@ -20,6 +20,14 @@ type PendingSnapshots = Record<string, { snapshot: unknown; scope?: unknown }>;
 export const __SnapshotContext = (RSC ? null : createContext<PendingSnapshots | null>(null)) as ReturnType<
   typeof createContext<PendingSnapshots | null>
 >;
+// Set while the page is being left (pagehide), cleared if it's shown again (back/forward cache).
+// One pair of listeners for every store: a pair per store was never removed, so each store (and each
+// createScope() in the browser) stayed alive for as long as the page did.
+let leavingPage = false;
+if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+  window.addEventListener('pagehide', () => { leavingPage = true; });
+  window.addEventListener('pageshow', () => { leavingPage = false; });
+}
 const storesByName = new Map<string, object>(); // the browser's stores, by name
 const MERGE = Symbol('createStore.merge');
 const QUIET = Symbol('createStore.quiet');
@@ -2531,13 +2539,6 @@ function build<
     promise.catch(() => {}); // avoid "unhandled rejection" when not awaited
     ownPromises.add(promise);
     return promise;
-  }
-
-  // Set while the page is being left (pagehide), cleared if it's shown again (back/forward cache)
-  let leavingPage = false;
-  if (isBrowser && typeof window.addEventListener === 'function') {
-    window.addEventListener('pagehide', () => { leavingPage = true; });
-    window.addEventListener('pageshow', () => { leavingPage = false; });
   }
 
   /* ---------- Loading and error status ---------- */
