@@ -655,12 +655,37 @@ export function createStore<
 ): Store<S, A, KA, AllComputed<C1, C2, C3, C4, C5, C6, C7, C8>, E> &
   ScopeApi<S, Store<S, A, KA, AllComputed<C1, C2, C3, C4, C5, C6, C7, C8>, E>> {
   type CV = AllComputed<C1, C2, C3, C4, C5, C6, C7, C8>;
+  checkStoreOptions(options);
   if ('queries' in options)
     throw new Error(
       `[${options.name ?? 'store'}] the queries option was replaced: declare each query in the state with ` +
         `query(fetch, options), e.g. { product: query((id, signal) => api.product(id, signal)) }, and read it with useGlobalState('product', id).`
     );
   return withScopes<S, A, KA, CV, E>(initialState, options, makeBase<S, A, KA, CV, E>(initialState, options));
+}
+
+const STORE_OPTIONS = new Set([
+  'name', 'persist', 'syncTabs', 'history', 'devtools', 'shared', 'ssr', 'logger', 'onChange', 'offline',
+  'validate', 'events', 'computed', 'keyActions', 'actions', 'queries',
+]);
+const warnedOptions = new Set<string>();
+/** A typo in an option ("persits") or a persisted store with no name is a silent bug: say so, once */
+function checkStoreOptions(opts: object) {
+  const options = opts as Record<string, unknown>;
+  const warn = (message: string) => {
+    if (warnedOptions.has(message)) return;
+    warnedOptions.add(message);
+    console.warn(message);
+  };
+  const id = (options.name as string | undefined) ?? 'store';
+  for (const k of Object.keys(options))
+    if (!STORE_OPTIONS.has(k))
+      warn(`[${id}] createStore() has no option "${k}", so it is ignored. Options: ${[...STORE_OPTIONS].filter((o) => o !== 'queries').join(', ')}.`);
+  if (!options.name && (options.persist || options.syncTabs || options.offline || options.shared))
+    warn(
+      `[store] persist, syncTabs, offline and shared use the store's name to tell stores apart. Without { name: '...' }, every unnamed ` +
+        `store uses "store", so two of them would overwrite each other's saved data and mix up their tabs. Give this one a name.`
+    );
 }
 
 /** The app's own store: shared under its name in the browser when `shared` is set */
@@ -2101,6 +2126,7 @@ function build<
    * changes it already made stay and are saved as one step (undo reverts them).
    */
   function batch<T>(fn: () => T): T {
+    if (typeof fn !== 'function') throw new Error(`[${name}] batch() takes a function that makes the changes: store.batch(() => { store.setState('a', 1); store.setState('b', 2); }).`);
     batchDepth++;
     if (batchDepth === 1 && historyLimit) batchChanges = Object.create(null);
     let result: T;
@@ -3340,6 +3366,8 @@ function build<
   };
   const api = Object.assign(Object.create(setterProtoOf(def, API_NAMES, 'apiProto')), apiMembers) as StoreApi<SV, E, RV>;
   Object.defineProperty(api, SETTER_OF, { value: (k: string) => setterFor(k) });
+  if (options.actions != null && typeof options.actions !== 'function')
+    throw new Error(`[${name}] actions must be a function that receives the store's api and returns your actions: createStore(state, { actions: (api) => ({ add(x) { api.setState('items', (i) => [...i, x]); } }) }).`);
   const actions = (options.actions?.(api as StoreApi<SV, E, RV> & ApiSetters<S, KA>) ?? {}) as A;
 
   /* ---------- Per-key actions: setTodos.add(...) ---------- */
