@@ -76,6 +76,7 @@
     "test:smoke": "node --test",
     "test:unit": "vitest run",
     "test:install": "node scripts/install-matrix.mjs",
+    "test:browsers": "node scripts/browser-smoke.mjs",
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
