@@ -5,6 +5,8 @@
   "license": "MIT",
   "author": "Gaurav Asawa",
   "keywords": [
+    "createstore",
+    "create-store",
     "react",
     "react-19",
     "react-hooks",
