@@ -11,6 +11,10 @@ on:
 
 permissions: {}
 
+concurrency:
+  group: post-release
+  cancel-in-progress: false
+
 jobs:
   registry:
     name: Install from the registry

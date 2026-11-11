@@ -1,0 +1,5 @@
+rules:
+  adhoc-packages:
+    ignore:
+      # Installing the just-published package from the registry is the whole point of this check
+      - post-release.yml
