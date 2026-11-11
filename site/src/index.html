@@ -394,8 +394,8 @@ function AddTodo() {
 <section class="doc-section" id="install" data-group="Getting started">
 <h2><a class="anchor" href="#install" aria-label="Link to this section">#</a>Installation</h2>
 <div class="code"><div class="code-bar"><span>Terminal</span><button class="copy" type="button" title="Copy this code to the clipboard">Copy</button></div><pre tabindex="0"><code class="language-bash">npm i @createstore/createstore</code></pre></div>
-<p>You'll need <strong>React 18 or newer</strong>. The hooks are built on <code>useSyncExternalStore</code>, which is what keeps reads consistent during concurrent rendering. Types ship with the package, so TypeScript works without installing anything else, and plain JavaScript works too.</p>
-<div class="table-wrap" tabindex="0"><table><thead><tr><th scope="col">Requirement</th><th scope="col">Version</th></tr></thead><tbody><tr><td>React</td><td>18 or newer (tested on 19.3)</td></tr><tr><td>TypeScript, if you use it</td><td>5.0 or newer</td></tr><tr><td>Browsers</td><td>Anything React supports</td></tr><tr><td>Server rendering</td><td>Supported, see <a href="#ssr">SSR</a></td></tr></tbody></table></div>
+<p>You'll need <strong>React 19 or newer</strong>. The hooks are built on <code>useSyncExternalStore</code>, which is what keeps reads consistent during concurrent rendering. Types ship with the package, so TypeScript works without installing anything else, and plain JavaScript works too.</p>
+<div class="table-wrap" tabindex="0"><table><thead><tr><th scope="col">Requirement</th><th scope="col">Version</th></tr></thead><tbody><tr><td>React</td><td>19 or newer (tested on 19.3)</td></tr><tr><td>TypeScript, if you use it</td><td>5.0 or newer</td></tr><tr><td>Browsers</td><td>Anything React supports</td></tr><tr><td>Server rendering</td><td>Supported, see <a href="#ssr">SSR</a></td></tr></tbody></table></div>
 </section>
 <section class="doc-section" id="quick-start" data-group="Getting started">
 <h2><a class="anchor" href="#quick-start" aria-label="Link to this section">#</a>Quick start</h2>
@@ -1753,7 +1753,7 @@ store.reset(); store.destroy();</code></pre></div>
 <h3 id="faq-query-vs-effect"><a class="anchor" href="#faq-query-vs-effect" aria-label="Link to this heading">#</a>How is a query different from fetching in useEffect?</h3>
 <p>A query loads once for every component that shows it, caches the result, refreshes stale data when the window regains focus or the connection comes back, retries failures, cancels cleanly, and gives you loading and error status. With <code>useEffect</code> you'd write all of that yourself, in every component that needs it.</p>
 <h3 id="faq-no-react"><a class="anchor" href="#faq-no-react" aria-label="Link to this heading">#</a>Can I use it without React?</h3>
-<p>The store itself works anywhere, through <code>getState</code>, <code>setState</code>, <code>subscribe</code>, actions, events and <code>fetchQuery</code>. The hooks need React 18 or newer.</p>
+<p>The store itself works anywhere, through <code>getState</code>, <code>setState</code>, <code>subscribe</code>, actions, events and <code>fetchQuery</code>. The hooks need React 19 or newer.</p>
 <h3 id="faq-next"><a class="anchor" href="#faq-next" aria-label="Link to this heading">#</a>Does it work with Next.js?</h3>
 <p>Yes. Add <code>ssr: true</code>. On the server, create a scope per request with <code>createScope(...)</code>, render inside <code>&lt;AppStore.Root scope={scope}&gt;</code> and send <code>scope.snapshot()</code> with the page; in the browser, <code>&lt;AppStore.Root scope={AppStore.hydrate(snapshot)}&gt;</code>. See <a href="#ssr">SSR</a>.</p>
 <h3 id="faq-offline"><a class="anchor" href="#faq-offline" aria-label="Link to this heading">#</a>Is my data safe if someone goes offline?</h3>
