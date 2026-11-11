@@ -24,6 +24,28 @@ function Counter() {
 Every component that reads `'count'` re-renders when any of them changes it. Outside React, use
 `store.getState('count')` and `store.setState('count', 2)`.
 
+### Share state between components
+
+Take `useGlobalState` out of the store, and any component can read or change the same list. No provider, no props
+passed down:
+
+```tsx
+const { useGlobalState } = createStore({ todos: [] as { text: string }[] });
+
+function TodoCount() {
+  const [todos] = useGlobalState('todos');
+  return <p>{todos.length} todos</p>;
+}
+
+function AddTodo() {
+  const [todos, setTodos] = useGlobalState('todos');
+  const add = (text: string) => setTodos([...todos, { text }]);
+  return <Form onAdd={add} />;
+}
+```
+
+`<Form>` stands for your own form component. When `AddTodo` adds a todo, `TodoCount` updates by itself.
+
 Everything else stays off until you use it: computed values, server data with `query()`, persistence, offline
 support, undo/redo, tab sync, events and server rendering.
 

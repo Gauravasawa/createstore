@@ -24,4 +24,29 @@ describe('README quick start', () => {
     expect(store.getState('count')).toBe(1);
     await act(async () => root.unmount());
   });
+
+  it('shares a list between components (the todos example)', async () => {
+    const { useGlobalState } = createStore({ todos: [] as { text: string }[] });
+    const Form = ({ onAdd }: { onAdd: (text: string) => void }) => <button onClick={() => onAdd('a')}>add</button>;
+
+    function TodoCount() {
+      const [todos] = useGlobalState('todos');
+      return <p>{todos.length} todos</p>;
+    }
+
+    function AddTodo() {
+      const [todos, setTodos] = useGlobalState('todos');
+      const add = (text: string) => setTodos([...todos, { text }]);
+      return <Form onAdd={add} />;
+    }
+
+    const el = document.createElement('div');
+    document.body.append(el);
+    const root = createRoot(el);
+    await act(async () => root.render(createElement('div', null, createElement(TodoCount), createElement(AddTodo))));
+    expect(el.querySelector('p')!.textContent).toBe('0 todos');
+    await act(async () => el.querySelector('button')!.click());
+    expect(el.querySelector('p')!.textContent).toBe('1 todos');
+    await act(async () => root.unmount());
+  });
 });
