@@ -1,6 +1,6 @@
 {
   "name": "@createstore/createstore",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Global state that works like useState: no provider, no reducers. Optional queries, persist, offline, history, tab sync and server rendering.",
   "license": "MIT",
   "author": "Gaurav Asawa",
