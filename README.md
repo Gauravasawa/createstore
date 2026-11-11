@@ -33,6 +33,14 @@ support, undo/redo, tab sync, events and server rendering.
 - Published with [npm provenance](https://docs.npmjs.com/generating-provenance-statements).
 - Versioned with [semantic versioning](https://semver.org); see [CHANGELOG.md](./CHANGELOG.md) once a release exists.
 
+## Links
+
+- [GitHub repository](https://github.com/Gauravasawa/createstore): source code, issues and releases
+- [npm package](https://www.npmjs.com/package/@createstore/createstore)
+- [Documentation](https://createstore-docs.pages.dev)
+- [Report a bug or request a feature](https://github.com/Gauravasawa/createstore/issues/new/choose)
+- [Security policy](https://github.com/Gauravasawa/createstore/security/policy)
+
 ## License
 
 [MIT](./LICENSE)
