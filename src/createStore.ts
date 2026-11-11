@@ -1823,6 +1823,9 @@ function build<
   // Nothing is saved until the saved data has loaded, so an async storage
   // isn't overwritten with the initial state.
   let hydrated = !persistStorage;
+  let warnedUnsavable = false;
+  // Keys the user changed before async saved state arrived: what they chose wins over what was saved
+  const earlyWrites = new Set<string>();
   let resolveHydrated!: () => void;
   const whenHydrated = new Promise<void>((r) => (resolveHydrated = r));
 
@@ -1855,7 +1858,22 @@ function build<
     if (!persistStorage || !hydrated) return;
     const data = Object.fromEntries(persistedKeys.map((k) => [k, state[k]]));
     // $saved (when it was written) only matters for async storage, to compare with a rescue copy
-    const text = JSON.stringify(storageIsAsync ? { $version: persistVersion, $saved: Date.now(), state: data } : { $version: persistVersion, state: data });
+    let text: string;
+    try {
+      text = JSON.stringify(storageIsAsync ? { $version: persistVersion, $saved: Date.now(), state: data } : { $version: persistVersion, state: data });
+    } catch (error) {
+      // A circular object or a BigInt: saving is skipped, and the store carries on (a throw here would leave
+      // the state changed but nobody notified, and every later write would throw too)
+      if (!warnedUnsavable) {
+        warnedUnsavable = true;
+        const bad = persistedKeys.find((k) => { try { JSON.stringify(state[k]); return false; } catch { return true; } });
+        console.warn(
+          `[${name}] couldn't save${bad ? ` "${bad}"` : ''}: ${(error as Error).message}. Saved state is JSON, so keep persisted keys to strings, numbers, ` +
+            `booleans, null, arrays and plain objects, or leave this key out of saving with persist: { exclude: [...] }. Nothing is saved until it is fixed.`
+        );
+      }
+      return;
+    }
     lastSavedText = text;
     quietly(() => {
       const written = persistStorage.setItem(persistKey, text);
@@ -1960,9 +1978,13 @@ function build<
           // Used only when it's real saved state and strictly newer; garbage or a tie keeps what's stored
           if (rescued != null && isSavedState(rescued) && savedAt(rescued) > savedAt(stored)) text = rescued;
           const values = trusted(pick(readSaved(text)), 'storage');
+          for (const k of earlyWrites) delete values[k]; // changed since startup: not overwritten by older saved data
+          const keptEarly = earlyWrites.size > 0;
+          earlyWrites.clear();
           hydrated = true; // so applying them also saves the current version
           if (!destroyed) apply(values, 'storage', 'loaded from storage', false);
-          if (!destroyed && text === rescued && rescued != null) saveNow(); // the rescued copy goes back into the storage
+          // the rescued copy, or what the user changed meanwhile, goes into the storage
+          if (!destroyed && (keptEarly || (text === rescued && rescued != null))) saveNow();
           finishHydration();
         },
         (error) => {
@@ -2259,6 +2281,7 @@ function build<
       (k) => isStateKey(k) && !Object.is(state[k], values[k])
     );
     if (keys.length === 0) return;
+    if (!hydrated && source === 'local') for (const k of keys) earlyWrites.add(k);
     // Update in place: copying the whole state object on every change would make
     // each update slower the more keys the store has. Only changed keys are touched.
     const prev: Record<string, unknown> = {};
@@ -3188,10 +3211,15 @@ function build<
     }
     const k = cacheKey(q, params);
     const prev = cache.get(k)?.data;
+    outdateRequest(k);
     setEntry(k, {
       data: typeof updater === 'function' ? updater(prev) : updater,
       status: 'success',
     });
+  }
+  /** A local edit while a request for this entry is out: that response predates the edit, so it reloads instead of replacing it */
+  function outdateRequest(k: string) {
+    if (inflight.has(k)) versions.set(k, (versions.get(k) ?? 0) + 1);
   }
 
   /** Cancel a query's in-flight requests (every params of a named query). */
@@ -3932,6 +3960,7 @@ function build<
       setter = (value, serverCall) => {
         const prev = cache.get(k)?.data;
         const next = typeof value === 'function' ? (value as (p: unknown) => unknown)(prev) : value;
+        outdateRequest(k);
         setEntry(k, { data: next, status: 'success' });
         if (!serverCall) return Promise.resolve() as Promise<never>;
         const done = Promise.resolve()
