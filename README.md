@@ -8,6 +8,14 @@ npm install @createstore/createstore
 
 Requires React 19 or newer. Works in the browser, in Node, and with Next.js Server Components.
 
+## When to use it
+
+- **Use it** when several components share state and you want the `useState` shape without a provider or reducers,
+  and when you also need server data, saved state, undo, tab sync or offline support behind the same API.
+- **It is fastest** when many components read different keys, because only readers of a changed key re-render.
+- **Look elsewhere** if you need to support React 18 or older, or if every component re-renders on every change
+  (Zustand is faster there; see `bench/`).
+
 ## Quick start
 
 ```tsx

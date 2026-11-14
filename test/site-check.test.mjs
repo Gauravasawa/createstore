@@ -59,3 +59,13 @@ test('a missing security header is rejected', () =>
   assert.equal(exitCodeFor(edit('_headers', (h) => h.replace('X-Content-Type-Options: nosniff', ''))), 1));
 test('a reference to a missing asset is rejected', () =>
   assert.equal(exitCodeFor(edit('index.html', (h) => h.replace('/favicon.svg', '/missing.svg'))), 1));
+
+// Search, answer engines and agents
+test('a docs section missing from llms.txt is rejected', () =>
+  assert.equal(exitCodeFor(edit('llms.txt', (t) => t.replace(/^- \[Persistence\].*\n/m, ''))), 1));
+test('a FAQ that no longer matches the structured data is rejected', () =>
+  assert.equal(exitCodeFor(edit('index.html', (h) => h.replace('"name":"Do I need a provider?"', '"name":""'))), 1));
+test('a robots.txt that blocks an AI crawler is rejected', () =>
+  assert.equal(exitCodeFor(edit('robots.txt', (t) => t.replace('User-agent: ClaudeBot\n', ''))), 1));
+test('a page without a social image is rejected', () =>
+  assert.equal(exitCodeFor(edit('index.html', (h) => h.replace('og-image.png', 'missing.png'))), 1));

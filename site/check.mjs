@@ -32,7 +32,7 @@ const allowed = [
   site,
   'https://schema.org',
   'https://opensource.org/license/mit',
-  'https://github.com/Gauravasawa/createstore',
+  'https://github.com/Gauravasawa', // the author, and the repository below it
   'https://www.npmjs.com/package/@createstore/createstore',
   'http://www.w3.org/2000/svg',
   'http://www.sitemaps.org/schemas/sitemap/0.9',
@@ -122,13 +122,61 @@ check(
 );
 if (!preview) check('sitemap lists the home page', read('sitemap.xml').includes(`<loc>${site}/</loc>`));
 const ld = /<script type="application\/ld\+json">([\s\S]*?)<\/script>/.exec(index)?.[1];
-let ldOk = false;
+let graph = [];
 try {
-  ldOk = JSON.parse(ld)['@type'] === 'SoftwareSourceCode';
+  graph = JSON.parse(ld)['@graph'] ?? [];
 } catch {
   /* reported below */
 }
-check('structured data (JSON-LD) parses', ldOk);
+const types = graph.map((n) => n['@type']);
+check(
+  'structured data (JSON-LD) parses, with WebSite, SoftwareSourceCode and FAQPage',
+  ['WebSite', 'SoftwareSourceCode', 'FAQPage'].every((t) => types.includes(t)),
+  types.join(', '),
+);
+const faqQuestions = (index.match(/<h3 id="faq-/g) ?? []).length;
+const faqLd = graph.find((n) => n['@type'] === 'FAQPage')?.mainEntity ?? [];
+check(
+  `the FAQ in the structured data matches the page (${faqQuestions} questions, each answered)`,
+  faqQuestions > 0 &&
+    faqLd.length === faqQuestions &&
+    faqLd.every((q) => q.name && q.acceptedAnswer?.text?.length > 10),
+  `${faqLd.length} in the structured data`,
+);
+
+// ---- answer engines, language models and agents ----
+const llms = read('llms.txt');
+const llmsFull = read('llms-full.txt');
+const sectionIds = [...index.matchAll(/<section class="doc-section" id="([^"]+)"/g)].map((m) => m[1]);
+check(
+  'llms.txt: a title, a one-line summary, and a link for every documentation section',
+  /^# \S/.test(llms) && /^> \S/m.test(llms) && sectionIds.every((id) => llms.includes(`(${site}/#${id})`)),
+  sectionIds.filter((id) => !llms.includes(`(${site}/#${id})`)).join(', '),
+);
+const prose = llmsFull.replace(/```[\s\S]*?```/g, ''); // code samples may contain markup on purpose
+check(
+  'llms-full.txt: the whole documentation as Markdown, a heading for every section, no leftover markup',
+  llmsFull.length > 20_000 &&
+    (llmsFull.match(/^## /gm) ?? []).length >= sectionIds.length &&
+    !/<\/?(div|span|section|button|svg)[\s>]/.test(prose) &&
+    !llms.includes('undefined'),
+);
+check(
+  'llms.txt and the headers are announced to agents (a <link> in the page and a Link header)',
+  index.includes('href="/llms.txt"') && index.includes('href="/llms-full.txt"') && /Link: <\/llms\.txt>/.test(headers),
+);
+check(
+  'robots.txt names the AI crawlers and points to llms.txt',
+  preview ||
+    (['GPTBot', 'ClaudeBot', 'PerplexityBot', 'Google-Extended'].every((b) => robots.includes(`User-agent: ${b}`)) &&
+      robots.includes('/llms.txt')),
+);
+check(
+  'social image: og:image, twitter:image and a large card, with the file present',
+  index.includes(`og:image" content="${site}/og-image.png"`) &&
+    index.includes('twitter:card" content="summary_large_image"') &&
+    existsSync(join(dist, 'og-image.png')),
+);
 // A wrong name in an install command would send readers to a different, unrelated package
 check(
   'examples use the published name @createstore/createstore, never a bare createstore',
