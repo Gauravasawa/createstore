@@ -69,3 +69,29 @@ test('a robots.txt that blocks an AI crawler is rejected', () =>
   assert.equal(exitCodeFor(edit('robots.txt', (t) => t.replace('User-agent: ClaudeBot\n', ''))), 1));
 test('a page without a social image is rejected', () =>
   assert.equal(exitCodeFor(edit('index.html', (h) => h.replace('og-image.png', 'missing.png'))), 1));
+
+// One page per section, and the files for crawlers
+test('a section without its own page is rejected', () =>
+  assert.equal(
+    exitCodeFor((dist) => rmSync(join(dist, 'persist'), { recursive: true, force: true })),
+    1,
+  ));
+test('a sitemap without the section pages is rejected', () =>
+  assert.equal(
+    exitCodeFor(edit('sitemap.xml', (x) => x.replace(/<url><loc>[^<]+\/persist\/<\/loc>.*<\/url>\n/, ''))),
+    1,
+  ));
+test('a section page whose inline script is not in the CSP is rejected', () =>
+  assert.equal(
+    exitCodeFor(edit('persist/index.html', (h) => h.replace('</body>', '<script>alert(1)</script></body>'))),
+    1,
+  ));
+test('a section page with a broken link is rejected', () =>
+  assert.equal(exitCodeFor(edit('persist/index.html', (h) => h.replace('href="/ssr/"', 'href="/nowhere/"'))), 1));
+test('an expired security.txt is rejected', () =>
+  assert.equal(
+    exitCodeFor(edit('.well-known/security.txt', (t) => t.replace(/Expires: .*/, 'Expires: 2020-01-01T00:00:00.000Z'))),
+    1,
+  ));
+test('a page without the skip link is rejected', () =>
+  assert.equal(exitCodeFor(edit('index.html', (h) => h.replace('class="skip-link"', 'class="x"'))), 1));

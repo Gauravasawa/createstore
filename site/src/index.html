@@ -6,7 +6,7 @@
 <title>createStore: global state for React that works like useState</title>
 <meta name="description" content="createStore is global state for React with the useState API: no provider, no reducers. Built-in server data, persistence, undo, tab sync, offline and SSR.">
 <link rel="canonical" href="%%SITE_URL%%/">
-<meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1">
+%%VERIFICATION%%%%PRELOAD%%<meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1">
 <meta name="theme-color" content="#F4F6F4" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#0E1513" media="(prefers-color-scheme: dark)">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
@@ -297,9 +297,17 @@ dialog.search::backdrop { background: rgba(8, 14, 12, .45); backdrop-filter: blu
 @media print { .tip { display: none; } }
 /* Visually hidden, still read by screen readers (was an inline style attribute, which the Content-Security-Policy forbids) */
 .sr-only { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden; }
+/* Layout shift: the demo's list is filled in by the script, so its space is reserved up front */
+.todo-list { min-height: 104px; align-content: start; }
+/* Touch targets of at least 24 x 24 px (WCAG 2.2, 2.5.8) */
+.todo-list input { width: 24px; height: 24px; }
+.skip-link { position: absolute; left: 12px; top: -64px; z-index: 50; padding: 10px 16px; background: var(--accent); color: var(--accent-ink); border-radius: 8px; font-weight: 700; text-decoration: none; }
+.skip-link:focus { top: 12px; }
+main:focus { outline: none; }
 </style>
 </head>
 <body>
+<a class="skip-link" href="#main-content">Skip to the documentation</a>
 <header class="topbar">
   <button class="icon-btn menu-btn" type="button" aria-label="Open navigation" title="Show or hide the navigation" aria-controls="sidebar" aria-expanded="false">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
@@ -332,7 +340,7 @@ dialog.search::backdrop { background: rgba(8, 14, 12, .45); backdrop-filter: blu
 <div class="nav-group"><p class="nav-title">Reference</p><ul><li><a href="#cheat-sheet" data-nav="cheat-sheet">Cheat sheet</a></li><li><a href="#api" data-nav="api">API reference</a></li><li><a href="#comparison" data-nav="comparison">Comparison</a></li><li><a href="#faq" data-nav="faq">FAQ</a></li></ul></div>
   </nav>
 
-  <main>
+  <main id="main-content" tabindex="-1">
     <div class="content">
       <section class="hero" aria-labelledby="hero-title">
         <h1 id="hero-title">createStore</h1>
@@ -1751,6 +1759,8 @@ store.reset(); store.destroy();</code></pre></div>
 <p>No. Components import the store and call <code>useGlobalState</code>. For server rendering you render the app once inside <code>&lt;AppStore.Root scope={...}&gt;</code>, which the store provides, so you still don't write a provider or a context; see <a href="#ssr">SSR</a>.</p>
 <h3 id="faq-reducers"><a class="anchor" href="#faq-reducers" aria-label="Link to this heading">#</a>Do I need reducers, action types or Context?</h3>
 <p>No. You change state with a setter, the same way you would with <code>useState</code>. When logic grows, <a href="#key-actions">key actions</a> and <a href="#actions">actions</a> are just plain functions. There's nothing to dispatch and nothing to combine, and even server rendering doesn't need a context of your own; see <a href="#ssr">SSR</a>.</p>
+<h3 id="faq-redux-name"><a class="anchor" href="#faq-redux-name" aria-label="Link to this heading">#</a>Is it related to Redux's createStore?</h3>
+<p>No. Redux has an older function that is also called <code>createStore</code> (Redux Toolkit recommends <code>configureStore</code> instead). This library is separate and unrelated: it is not a Redux store, and its npm package is <code>@createstore/createstore</code>. When you search for it, use the full package name.</p>
 <h3 id="faq-optional"><a class="anchor" href="#faq-optional" aria-label="Link to this heading">#</a>Can I use it without queries or persistence?</h3>
 <p>Absolutely. Every feature is off until you use it. A store with nothing but plain keys and <code>useGlobalState</code> is a perfectly complete setup.</p>
 <h3 id="faq-many"><a class="anchor" href="#faq-many" aria-label="Link to this heading">#</a>Can I have more than one store?</h3>
@@ -1816,8 +1826,15 @@ store.reset(); store.destroy();</code></pre></div>
     });
   }
   if (window.Prism) {
-    $$('pre code[class*="language-"]').forEach(function (el) { try { Prism.highlightElement(el); } catch (e) {} });
-    markKeys(document);
+    var highlight = function (el) { try { Prism.highlightElement(el); } catch (e) {} markKeys(el.parentNode); };
+    var blocks = $$('pre code[class*="language-"]');
+    if ('IntersectionObserver' in window) {
+      // Only blocks near the screen are highlighted now: highlighting every block at load blocked the page for ~1 s on a phone
+      var near = new IntersectionObserver(function (entries) {
+        entries.forEach(function (en) { if (en.isIntersecting) { near.unobserve(en.target); highlight(en.target); } });
+      }, { rootMargin: '1200px 0px' });
+      blocks.forEach(function (el) { near.observe(el); });
+    } else blocks.forEach(highlight);
   }
 
   /* ---------- Copy buttons ---------- */

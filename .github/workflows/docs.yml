@@ -39,6 +39,9 @@ jobs:
           # Set the repository variable DOCS_URL to the site address (see .github/setup-checklist.md)
           SITE_URL: ${{ vars.DOCS_URL || 'http://localhost:8788' }}
           DOCS_ENV: ${{ github.ref == 'refs/heads/main' && 'production' || 'preview' }}
+          # Optional: the ownership tokens from Search Console and Bing Webmaster Tools (repository variables; see site/README.md)
+          GOOGLE_SITE_VERIFICATION: ${{ vars.GOOGLE_SITE_VERIFICATION }}
+          BING_SITE_VERIFICATION: ${{ vars.BING_SITE_VERIFICATION }}
         run: npm run docs:build
       # Security headers, no third-party requests, every reference resolves, SEO files
       - run: npm run docs:check

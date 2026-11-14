@@ -28,7 +28,7 @@ cmd, not Git Bash.
   `package.json` or `CHANGELOG.md` by hand.
 - **No runtime dependencies**, ever. No npm token anywhere: publishing uses trusted publishing from `release.yml`.
 - **Add a test with every change.** A bug fix gets a test that fails without the fix.
-- **Do not hand-edit generated files**: `site/dist/`, `dist/`, `llms.txt`, `llms-full.txt`, `sitemap.xml`, the JSON-LD.
+- **Do not hand-edit generated files**: `site/dist/`, `dist/`, `llms.txt`, `llms-full.txt`, `sitemap.xml`, the JSON-LD, the section pages.
   They come from `site/build.mjs`, which reads the page itself so they cannot drift.
 - Changes under `.github/`, `scripts/` and the release config need the owner's review (CODEOWNERS).
 - Prettier formats everything (`npx prettier --write <file>`); ESLint must pass with zero warnings.

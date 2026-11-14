@@ -35,7 +35,8 @@ const types = {
 
 const server = createServer((req, res) => {
   const path = decodeURIComponent(new URL(req.url, 'http://x').pathname);
-  let file = join(dist, normalize(path === '/' ? '/index.html' : path));
+  // like Cloudflare Pages: a path ending in "/" is the index.html of that folder
+  let file = join(dist, normalize(path.endsWith('/') ? `${path}index.html` : path));
   let status = 200;
   if (!file.startsWith(dist) || !existsSync(file) || !statSync(file).isFile()) {
     file = join(dist, '404.html');
@@ -96,6 +97,7 @@ try {
     requested.filter((u) => !u.startsWith(base)).join(', '),
   );
 
+  await page.waitForSelector('.token', { timeout: 5000 }).catch(() => {}); // blocks are highlighted as they come near the screen
   check('syntax highlighting ran (self-hosted Prism)', (await page.locator('.token').count()) > 0);
   const fonts = await page.evaluate(async () => {
     await document.fonts.ready;
@@ -106,6 +108,47 @@ try {
     ['Atkinson Hyperlegible', 'Bricolage Grotesque', 'IBM Plex Mono'].every((f) => fonts.includes(f)),
     fonts.join(', '),
   );
+
+  // ---- a section page (its own URL) works the same way, under the same policy ----
+  const sp = await browser.newPage();
+  const spProblems = [];
+  const spOutside = [];
+  sp.on('console', (m) => m.type() === 'error' && spProblems.push(m.text()));
+  sp.on('pageerror', (e) => spProblems.push(String(e)));
+  sp.on('request', (r) => !r.url().startsWith(base) && spOutside.push(r.url()));
+  await sp.addInitScript(() => {
+    window.__csp = [];
+    document.addEventListener('securitypolicyviolation', (e) =>
+      window.__csp.push(`${e.violatedDirective} ${e.blockedURI}`),
+    );
+  });
+  const spResponse = await sp.goto(`${base}/persist/`, { waitUntil: 'networkidle' });
+  check(
+    'section page: 200 with the CSP, one h1, nothing blocked, no errors, nothing from outside this site',
+    spResponse.status() === 200 &&
+      Boolean(spResponse.headers()['content-security-policy']) &&
+      (await sp.locator('h1').count()) === 1 &&
+      (await sp.evaluate(() => window.__csp)).length === 0 &&
+      spProblems.length === 0 &&
+      spOutside.length === 0,
+    JSON.stringify([await sp.evaluate(() => window.__csp), spProblems, spOutside]),
+  );
+  check(
+    'section page: code is highlighted and the navigation marks this page',
+    (await sp.locator('.token').count()) > 0 &&
+      (await sp.locator('#sidebar a[aria-current="page"]').innerText()).includes('Persistence'),
+  );
+  await sp.keyboard.press('Tab');
+  check(
+    'section page: the first Tab stop is the skip link, and it leads to the content',
+    (await sp.evaluate(() => document.activeElement?.className)) === 'skip-link' &&
+      (await sp.evaluate(() => document.activeElement?.getAttribute('href'))) === '#main-content',
+  );
+  const spTheme = () => sp.evaluate(() => document.documentElement.getAttribute('data-theme'));
+  const spBefore = await spTheme();
+  await sp.locator('.theme-btn').click();
+  check('section page: theme switch works', (await spTheme()) !== spBefore);
+  await sp.close();
 
   // ---- the page still works ----
   const theme = () => page.evaluate(() => document.documentElement.getAttribute('data-theme'));

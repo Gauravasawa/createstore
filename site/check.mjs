@@ -195,8 +195,109 @@ check(
 );
 check('404 page is noindex', /<meta name="robots" content="noindex"/.test(read('404.html')));
 
+// ---- one static page per section, so each topic can be found, linked and indexed on its own ----
+const pages = sectionIds.map((id) => ({
+  id,
+  path: `${id}/index.html`,
+  html: existsSync(join(dist, id, 'index.html')) ? read(`${id}/index.html`) : '',
+}));
+check(
+  `every one of the ${sectionIds.length} sections has its own page`,
+  pages.every((p) => p.html.length > 2000),
+  pages
+    .filter((p) => !p.html)
+    .map((p) => p.id)
+    .join(', '),
+);
+const titles = pages.map((p) => /<title>([^<]+)<\/title>/.exec(p.html)?.[1]);
+const descriptions = pages.map((p) => /<meta name="description" content="([^"]+)"/.exec(p.html)?.[1]);
+check(
+  'section pages: one h1, a unique title (under 70 characters) and description (50 to 300), a canonical to itself',
+  pages.every(
+    (p, i) =>
+      (p.html.match(/<h1[\s>]/g) ?? []).length === 1 &&
+      titles[i] &&
+      titles[i].length <= 70 &&
+      descriptions[i] &&
+      descriptions[i].length >= 50 &&
+      descriptions[i].length <= 300 &&
+      p.html.includes(`<link rel="canonical" href="${site}/${p.id}/">`) &&
+      p.html.includes('<meta name="robots" content="index, follow'),
+  ) &&
+    new Set(titles).size === titles.length &&
+    new Set(descriptions).size === descriptions.length,
+);
+check(
+  'section pages: structured data has a TechArticle and a BreadcrumbList that end at the page',
+  pages.every((p) => {
+    try {
+      const g = JSON.parse(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/.exec(p.html)[1])['@graph'];
+      const crumbs = g.find((n) => n['@type'] === 'BreadcrumbList')?.itemListElement ?? [];
+      return g.some((n) => n['@type'] === 'TechArticle') && crumbs.at(-1)?.item === `${site}/${p.id}/`;
+    } catch {
+      return false;
+    }
+  }),
+);
+const sitemap = read('sitemap.xml');
+check(
+  'sitemap lists the home page and every section page',
+  preview || sectionIds.every((id) => sitemap.includes(`<loc>${site}/${id}/</loc>`)),
+);
+const pageProblems = [];
+for (const p of pages) {
+  const ids = new Set([...p.html.matchAll(/\sid="([^"]+)"/g)].map((m) => m[1]));
+  for (const m of p.html.matchAll(/(?:href|src)="([^"]+)"/g)) {
+    const u = m[1];
+    if (u.startsWith('#') && u.length > 1 && !ids.has(u.slice(1))) pageProblems.push(`${p.id}: ${u}`);
+    else if (u.startsWith('/') && !u.startsWith('//')) {
+      const [path, hash] = u.split('#');
+      if (path !== '/' && !existsSync(join(dist, path))) pageProblems.push(`${p.id}: ${u}`);
+      else if (hash && path.endsWith('/') && path !== '/') {
+        const target = read(`${path.slice(1)}index.html`);
+        if (!target.includes(`id="${hash}"`)) pageProblems.push(`${p.id}: ${u} (no such heading)`);
+      }
+    }
+  }
+}
+check(
+  'section pages: every link, asset and #anchor resolves',
+  pageProblems.length === 0,
+  pageProblems.slice(0, 5).join(', '),
+);
+const hashOf = (text) => `'sha256-${createHash('sha256').update(text, 'utf8').digest('base64')}'`;
+const unhashedSections = [];
+for (const p of pages) {
+  for (const m of p.html.matchAll(/<(script|style)(\s[^>]*)?>([\s\S]*?)<\/\1>/g)) {
+    if (/\ssrc=|type="application\/ld\+json"/.test(m[2] ?? '')) continue;
+    if (!csp.includes(hashOf(m[3]))) unhashedSections.push(`${p.id}: inline <${m[1]}>`);
+  }
+}
+check(
+  'section pages: every inline script and style is allowed by the CSP, and nothing else',
+  unhashedSections.length === 0,
+  unhashedSections.slice(0, 3).join(', '),
+);
+check(
+  'skip link on the home page and the section pages, with a target',
+  [index, ...pages.map((p) => p.html)].every(
+    (h) => h.includes('class="skip-link" href="#main-content"') && h.includes('id="main-content"'),
+  ),
+);
+const sec = existsSync(join(dist, '.well-known/security.txt')) ? read('.well-known/security.txt') : '';
+check(
+  'security.txt names a contact and expires in the future',
+  /^Contact: https:\/\/\S+$/m.test(sec) && Date.parse(/^Expires: (\S+)$/m.exec(sec)?.[1] ?? '') > Date.now(),
+);
+const fullTextBlock = headers.split('\n\n').find((b) => b.startsWith('/llms-full.txt')) ?? '';
+check(
+  'llms-full.txt says the page is its canonical (it is a copy of it)',
+  fullTextBlock.includes(`Link: <${site}/>; rel="canonical"`),
+);
+
 const size = files.reduce((n, f) => n + statSync(join(dist, f)).size, 0);
-check(`total size within budget (${size} <= 1,500,000 bytes)`, size <= 1_500_000);
+// One page, 37 section pages, the Markdown copy and the shared assets. A rise past this is a deliberate edit.
+check(`total size within budget (${size} <= 2,000,000 bytes)`, size <= 2_000_000);
 
 for (const r of results)
   console.log(`${r.ok ? 'PASS' : 'FAIL'}  ${r.name}${r.ok || !r.detail ? '' : `\n      ${r.detail}`}`);

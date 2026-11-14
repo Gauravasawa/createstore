@@ -8,6 +8,8 @@ npm install @createstore/createstore
 
 Requires React 19 or newer. Works in the browser, in Node, and with Next.js Server Components.
 
+Not related to Redux's `createStore` function: this is a separate library, installed as `@createstore/createstore`.
+
 ## When to use it
 
 - **Use it** when several components share state and you want the `useState` shape without a provider or reducers,
