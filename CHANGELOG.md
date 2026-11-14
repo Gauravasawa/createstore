@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.1.1](https://github.com/Gauravasawa/createstore/compare/v1.1.0...v1.1.1) (2026-11-11)
+
+### Bug Fixes
+
+* persisting an unsavable value no longer breaks the store ([a900078](https://github.com/Gauravasawa/createstore/commit/a9000786aedf52c8a87772be219a4e4f2ec0b8fe))
+
 ## [1.1.0](https://github.com/Gauravasawa/createstore/compare/v1.0.0...v1.1.0) (2026-11-11)
 
 ### Features
