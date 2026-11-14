@@ -289,6 +289,10 @@ check(
   'security.txt names a contact and expires in the future',
   /^Contact: https:\/\/\S+$/m.test(sec) && Date.parse(/^Expires: (\S+)$/m.exec(sec)?.[1] ?? '') > Date.now(),
 );
+check(
+  'security.txt is also at /security.txt and /.well-known/ is rewritten to it (Cloudflare skips dot-folders)',
+  existsSync(join(dist, 'security.txt')) && read('_redirects').includes('/.well-known/security.txt /security.txt 200'),
+);
 const fullTextBlock = headers.split('\n\n').find((b) => b.startsWith('/llms-full.txt')) ?? '';
 check(
   'llms-full.txt says the page is its canonical (it is a copy of it)',

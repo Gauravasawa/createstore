@@ -591,11 +591,11 @@ ${prismTags}
 // security.txt (RFC 9116): where to report a vulnerability. It expires a year after the docs were last changed.
 const expires = new Date(`${lastModified || new Date().toISOString().slice(0, 10)}T00:00:00Z`);
 expires.setUTCFullYear(expires.getUTCFullYear() + 1);
+const securityTxt = `Contact: ${REPO_URL}/security/advisories/new\nExpires: ${expires.toISOString()}\nPreferred-Languages: en\nCanonical: ${SITE}/.well-known/security.txt\nPolicy: ${REPO_URL}/blob/main/SECURITY.md\n`;
 mkdirSync(join(out, '.well-known'), { recursive: true });
-writeFileSync(
-  join(out, '.well-known', 'security.txt'),
-  `Contact: ${REPO_URL}/security/advisories/new\nExpires: ${expires.toISOString()}\nPreferred-Languages: en\nCanonical: ${SITE}/.well-known/security.txt\nPolicy: ${REPO_URL}/blob/main/SECURITY.md\n`,
-);
+writeFileSync(join(out, '.well-known', 'security.txt'), securityTxt);
+// Cloudflare's upload skips dot-folders, so the file is also served from /security.txt and /.well-known/ is rewritten to it
+writeFileSync(join(out, 'security.txt'), securityTxt);
 
 writeFileSync(join(out, 'index.html'), index);
 writeFileSync(join(out, '404.html'), page('src/404.html'));
@@ -649,7 +649,7 @@ if (!preview) {
       .join('\n')}\n</urlset>\n`,
   );
 }
-writeFileSync(join(out, '_redirects'), '/index.html / 301\n');
+writeFileSync(join(out, '_redirects'), '/index.html / 301\n/.well-known/security.txt /security.txt 200\n');
 
 // ---- 4. headers: the CSP lists the hash of every inline script and style, nothing else is allowed inline ----
 const inline = (tag, skip) =>
@@ -695,6 +695,10 @@ const headers = [
   `  Link: <${SITE}/>; rel="canonical"`,
   '',
   '/.well-known/security.txt',
+  '  Content-Type: text/plain; charset=utf-8',
+  '  Cache-Control: public, max-age=86400',
+  '',
+  '/security.txt',
   '  Content-Type: text/plain; charset=utf-8',
   '  Cache-Control: public, max-age=86400',
   '',
