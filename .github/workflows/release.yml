@@ -45,7 +45,15 @@ jobs:
         with:
           node-version-file: .nvmrc
       - run: npm ci --ignore-scripts
-      - run: npm audit signatures
+      # 3 tries: the registry's key lookup fails now and then (EMISSINGSIGNATUREKEY); a really bad signature fails all
+      - name: npm audit signatures (3 tries)
+        run: |
+          for attempt in 1 2 3; do
+            npm audit signatures && exit 0
+            echo "::warning::npm audit signatures failed (attempt $attempt of 3)"
+            sleep 20
+          done
+          exit 1
       # Everything CI checks, on the exact commit being released
       - run: npm run verify
       - run: npm run test:release
