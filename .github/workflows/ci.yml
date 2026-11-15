@@ -2,7 +2,8 @@ name: CI
 
 on:
   push:
-    branches: [main, next, beta]
+    # Every branch release.yml can release from: a release waits for this workflow to pass on its commit
+    branches: [main, next, beta, alpha, '[0-9]+.x', '[0-9]+.[0-9]+.x']
   pull_request:
 
 # Least privilege: every job only reads the repository.
