@@ -470,6 +470,11 @@ export interface PersistOptions<S = Record<string, unknown>> {
 
 export interface StoreOptions<S, A, KA = NoKeys, E extends object = AnyEvents> {
   name?: string;
+  /**
+   * Save state across reloads. With several tabs open, each tab saves only the keys it changed over what the
+   * others saved, so changes to different keys all survive; for the same key the last save wins. (With an
+   * async storage the last save wins for the whole state; add syncTabs to keep tabs in step.)
+   */
   persist?: boolean | 'local' | 'session' | PersistOptions<S>;
   /** Keep other tabs in sync. `{ keys }` sends only those keys; `{ exclude }` sends everything else (e.g. tokens) */
   syncTabs?: boolean | { keys?: (keyof S & string)[]; exclude?: (keyof S & string)[] };
@@ -495,6 +500,8 @@ export interface StoreOptions<S, A, KA = NoKeys, E extends object = AnyEvents> {
    * Keep server data and queue saves while offline. `maxSize`: the most characters one saved copy may take
    * (default 2,000,000). Kept in localStorage: queries without params under `<name>:inline`, with params and
    * paged under `<name>:queries`. It holds per-user data until `reset()`, so call that on sign-out.
+   * Saves queued while offline run one after another, in order, when the connection is back. The queue is kept
+   * in memory only: a reload or a closed tab while offline drops the saves that were still waiting.
    */
   offline?: boolean | { maxSize?: number };
   /**
@@ -1765,7 +1772,18 @@ function build<
       return null;
     }
   };
-  // The offline cache (options.offline): JSON in localStorage; failures are ignored
+  // Writing to storage must never break the store, but the developer hears about it, once per kind of write
+  // (storage full, blocked, a failing adapter): otherwise nothing tells them that nothing is being saved
+  const reportedWrites = new Set<string>();
+  const reportWriteFailure = (what: string, error: unknown) => {
+    if (reportedWrites.has(what)) return;
+    reportedWrites.add(what);
+    console.warn(
+      `[${name}] couldn't save ${what}: ${(error as Error)?.message ?? String(error)}. The store keeps working in memory, ` +
+        `but nothing more is saved until writing works again (is the storage full or blocked?).`
+    );
+  };
+  // The offline cache (options.offline): JSON in localStorage; a failed write is reported once, the store carries on
   const offlineMax = (typeof options.offline === 'object' && options.offline.maxSize) || 2_000_000;
   let warnedOfflineSize = false;
   const writeOffline = (suffix: string, data: unknown) => {
@@ -1782,7 +1800,9 @@ function build<
         return;
       }
       ls?.setItem(`${name}:${suffix}`, text);
-    } catch {}
+    } catch (error) {
+      reportWriteFailure('the offline copy of server data', error);
+    }
   };
   const readOffline = <T,>(suffix: string): Record<string, T> => {
     if (!options.offline) return {};
@@ -1842,12 +1862,17 @@ function build<
     ? persistCfg.storage
     : storage(persistCfg.storage ?? 'local');
   const persistKey = `${name}:state`;
-  /** Ignore failures, sync or async: storage must never break the store */
+  // A storage that isn't there at all (blocked, private mode): said once, instead of silently saving nothing
+  if (persistCfg && isBrowser && !persistStorage)
+    console.warn(`[${name}] persist is on, but the browser's storage isn't available (blocked or private mode?), so nothing is saved.`);
+  /** Failures, sync or async, never break the store: they are reported once (see reportWriteFailure) */
   const quietly = (fn: () => unknown) => {
     try {
       const r = fn();
-      if (isThenable(r)) r.then(undefined, () => {});
-    } catch {}
+      if (isThenable(r)) r.then(undefined, (error: unknown) => reportWriteFailure('the state', error));
+    } catch (error) {
+      reportWriteFailure('the state', error);
+    }
   };
 
   // Nothing is saved until the saved data has loaded, so an async storage
@@ -1882,11 +1907,33 @@ function build<
       return 0;
     }
   };
+  // Several tabs sharing one saved blob: each save writes this tab's whole state, which used to overwrite a key another tab
+  // had saved meanwhile. So a tab remembers what storage held (persistedBase) and which keys IT changed since
+  // (dirtyKeys); when another tab has written in between, only the keys this tab changed replace what that tab saved.
+  // Synchronous storage only: an async one can't be read back in step. In one tab nothing differs from before.
+  let persistedBase: Record<string, unknown> = {};
+  const dirtyKeys = new Set<string>();
+  const savedByOthers = (): Record<string, unknown> | null => {
+    if (storageIsAsync) return null;
+    try {
+      const current = persistStorage!.getItem(persistKey);
+      if (typeof current !== 'string' || current === lastSavedText) return null; // nobody wrote since this tab's last read or write
+      const saved = JSON.parse(current) as { $version?: unknown; state?: unknown } | null;
+      if (!saved || saved.$version !== persistVersion || !saved.state || typeof saved.state !== 'object') return null;
+      return saved.state as Record<string, unknown>;
+    } catch {
+      return null;
+    }
+  };
   const saveNow = () => {
     clearTimeout(saveTimer);
     saveTimer = undefined;
     if (!persistStorage || !hydrated) return;
-    const data = Object.fromEntries(persistedKeys.map((k) => [k, state[k]]));
+    const theirs = savedByOthers();
+    if (theirs) persistedBase = { ...persistedBase, ...pick(theirs) };
+    const data = Object.fromEntries(
+      persistedKeys.map((k) => [k, dirtyKeys.has(k) || !(k in persistedBase) ? state[k] : persistedBase[k]])
+    );
     // $saved (when it was written) only matters for async storage, to compare with a rescue copy
     let text: string;
     try {
@@ -1915,6 +1962,8 @@ function build<
       }
       return written;
     });
+    persistedBase = data;
+    dirtyKeys.clear();
   };
   const writeRescue = () => {
     if (!storageIsAsync || uncommitted === 0 || !lastSavedText) return;
@@ -1947,15 +1996,25 @@ function build<
 
   /** Saved text → values to use, migrated to the current version. null = nothing usable. */
   let rewrite = false; // migrated or dropped: save the current shape right away
+  let warnedCorrupt = false;
+  const corrupt = (why: string) => {
+    if (warnedCorrupt) return;
+    warnedCorrupt = true;
+    console.warn(`[${name}] the saved state couldn't be read (${why}), so it was ignored and the initial values are used. The next save replaces it.`);
+  };
   function readSaved(raw: string | null): Record<string, unknown> | null {
     if (raw == null) return null;
     let saved: unknown;
     try {
       saved = JSON.parse(raw);
-    } catch {
+    } catch (error) {
+      corrupt((error as Error).message);
       return null;
     }
-    if (!saved || typeof saved !== 'object') return null;
+    if (!saved || typeof saved !== 'object') {
+      corrupt('it is not an object');
+      return null;
+    }
     const obj = saved as Record<string, unknown>;
     const legacy = !('$version' in obj); // saved before versioning: the state itself
     const from = legacy ? 0 : (obj.$version as number);
@@ -2024,7 +2083,10 @@ function build<
       );
     } else {
       // Sync storage (localStorage...): load before anything renders
-      Object.assign(state, trusted(pick(readSaved(raw as string | null)), 'storage'));
+      const loaded = trusted(pick(readSaved(raw as string | null)), 'storage');
+      Object.assign(state, loaded);
+      persistedBase = loaded; // what this tab now knows storage holds
+      lastSavedText = typeof raw === 'string' ? raw : null;
       // Nothing reads these this early today; clear them so loaded values can never be shadowed
       computedCache.clear();
       selectMemo.clear();
@@ -2366,6 +2428,7 @@ function build<
   let saveInlineAfterBatch = false;
   function persistChanges(keys: string[]) {
     const saved = keys.some((k) => persistedKeySet.has(k)); // other keys don't touch saved state, or the debounce
+    for (const k of keys) if (persistedKeySet.has(k)) dirtyKeys.add(k); // this tab changed it: it wins over another tab's copy
     const inline = keys.some(isQuery);
     if (batchDepth > 0) {
       saveAfterBatch ||= saved;
@@ -3294,19 +3357,23 @@ function build<
 
   /* ---------- Offline queue and refresh on focus ---------- */
 
-  const queue: (() => void)[] = [];
+  // run() settles the caller's promise and never rejects itself, so tasks can be chained; cancel() rejects it
+  const queue: { run: () => Promise<void>; cancel: (error: Error) => void }[] = [];
+  const destroyedWhileWaiting = () =>
+    new Error(`[${name}] destroy() was called while this task waited for the connection, so it never ran.`);
   /**
    * Runs the task now, or once the connection is back. It may run much later,
    * so read the latest state inside it:
    *   whenOnline(() => api.save(store.getState('todos')))   // sends what's current then
    * not a value captured earlier:
    *   whenOnline(() => api.save(todos))                     // may send stale data
+   * Tasks that waited run one after another, in the order they were queued. They are kept in memory only.
    */
   function whenOnline(task: () => Promise<unknown> | unknown) {
     if (destroyed) return Promise.reject(new Error(`[${name}] whenOnline() after destroy().`));
     if (!isBrowser || navigator.onLine) return Promise.resolve().then(task);
     const waiting = new Promise((resolve, reject) =>
-      queue.push(() => Promise.resolve().then(task).then(resolve, reject))
+      queue.push({ run: () => Promise.resolve().then(task).then(resolve, reject), cancel: reject })
     );
     updateWindowListeners();
     return waiting;
@@ -3327,7 +3394,11 @@ function build<
     }
   };
   const onOnline = () => {
-    queue.splice(0).forEach((task) => task());
+    // One after another, in the order they were queued: dependent saves (create, then edit) must reach the server in
+    // that order. A task that fails doesn't stop the next one. A store destroyed meanwhile runs none of the rest.
+    queue
+      .splice(0)
+      .reduce<Promise<void>>((previous, task) => previous.then(() => (destroyed ? task.cancel(destroyedWhileWaiting()) : task.run())), Promise.resolve());
     refreshVisible();
     updateWindowListeners();
   };
@@ -3373,7 +3444,8 @@ function build<
     gcTimers.forEach((t) => clearTimeout(t));
     gcTimers.clear();
     abortAll();
-    queue.length = 0; // saves waiting for the connection won't run on a destroyed store
+    // Saves waiting for the connection won't run on a destroyed store: their callers are told, instead of waiting forever
+    queue.splice(0).forEach((task) => task.cancel(destroyedWhileWaiting()));
     entrySetters.clear();
     entrySelect.clear();
     if (options.shared) {
