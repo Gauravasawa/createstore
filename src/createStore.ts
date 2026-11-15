@@ -169,6 +169,8 @@ export interface PagedQueryDef<TPage, TParam, P = unknown, A extends WhenAborted
  */
 export type StateReader<V> = V & (<K extends keyof V & string>(key: K) => V[K]);
 
+// ComputedLayer, LayerValues and AddedValues are no longer used by createStore() itself (it types a layer by the
+// values it returns, see "Computed layers" below). They stay exported so code that imports them keeps compiling.
 /** One layer of computed values. Each function can read state and every earlier layer. */
 // Returns `any`, not `unknown`: with `unknown` TypeScript stops inferring the later layers
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- see above
@@ -617,10 +619,44 @@ export function defineEvents<E extends object>(): E {
    Public entry
    ========================================================================= */
 
-type L<C> = LayerValues<C>;
-type AllComputed<C1, C2, C3, C4, C5, C6, C7, C8> = AddedValues<C1> & AddedValues<C2> &
-  AddedValues<C3> & AddedValues<C4> & AddedValues<C5> & AddedValues<C6> & AddedValues<C7> &
-  AddedValues<C8>;
+/*
+ * Computed layers. `C1`..`C8` are the VALUES each layer returns ({ total: number }), not its functions.
+ * Why: a layer is typed as a mapped type over those values, and that keeps the earlier layers visible to
+ * `get` while TypeScript is still inferring them. Typing a layer as a bare `C2 extends ComputedLayer<...C1>`
+ * made TypeScript fall back to the constraint, so `get('anEarlierComputedValue')` was `any`.
+ * `Vn` is what layer n+1 can read: the state and every layer before it.
+ */
+type Vals = Record<string, unknown>;
+type Layer<C, V> = { [K in keyof C]: (get: StateReader<V>) => C[K] };
+type V0<S> = Values<S>;
+type V1<S, C1> = V0<S> & C1;
+type V2<S, C1, C2> = V1<S, C1> & C2;
+type V3<S, C1, C2, C3> = V2<S, C1, C2> & C3;
+type V4<S, C1, C2, C3, C4> = V3<S, C1, C2, C3> & C4;
+type V5<S, C1, C2, C3, C4, C5> = V4<S, C1, C2, C3, C4> & C5;
+type V6<S, C1, C2, C3, C4, C5, C6> = V5<S, C1, C2, C3, C4, C5> & C6;
+type V7<S, C1, C2, C3, C4, C5, C6, C7> = V6<S, C1, C2, C3, C4, C5, C6> & C7;
+// The `computed` list for 1 to 8 layers, built one layer at a time
+type T1<S, C1> = [Layer<C1, V0<S>>];
+type T2<S, C1, C2> = [...T1<S, C1>, Layer<C2, V1<S, C1>>];
+type T3<S, C1, C2, C3> = [...T2<S, C1, C2>, Layer<C3, V2<S, C1, C2>>];
+type T4<S, C1, C2, C3, C4> = [...T3<S, C1, C2, C3>, Layer<C4, V3<S, C1, C2, C3>>];
+type T5<S, C1, C2, C3, C4, C5> = [...T4<S, C1, C2, C3, C4>, Layer<C5, V4<S, C1, C2, C3, C4>>];
+type T6<S, C1, C2, C3, C4, C5, C6> = [...T5<S, C1, C2, C3, C4, C5>, Layer<C6, V5<S, C1, C2, C3, C4, C5>>];
+type T7<S, C1, C2, C3, C4, C5, C6, C7> = [...T6<S, C1, C2, C3, C4, C5, C6>, Layer<C7, V6<S, C1, C2, C3, C4, C5, C6>>];
+type T8<S, C1, C2, C3, C4, C5, C6, C7, C8> = [...T7<S, C1, C2, C3, C4, C5, C6, C7>, Layer<C8, V7<S, C1, C2, C3, C4, C5, C6, C7>>];
+type ComputedOption<S, C1, C2, C3, C4, C5, C6, C7, C8> =
+  | T1<S, C1>
+  | T2<S, C1, C2>
+  | T3<S, C1, C2, C3>
+  | T4<S, C1, C2, C3, C4>
+  | T5<S, C1, C2, C3, C4, C5>
+  | T6<S, C1, C2, C3, C4, C5, C6>
+  | T7<S, C1, C2, C3, C4, C5, C6, C7>
+  | T8<S, C1, C2, C3, C4, C5, C6, C7, C8>;
+// A layer that wasn't passed is inferred as the bare constraint (string keys); it adds no keys
+type Added<C> = string extends keyof C ? NoKeys : C;
+type AllComputed<C1, C2, C3, C4, C5, C6, C7, C8> = Added<C1> & Added<C2> & Added<C3> & Added<C4> & Added<C5> & Added<C6> & Added<C7> & Added<C8>;
 
 /**
  * `computed` is a list of layers (up to 8). A layer's functions can read state and every
@@ -628,30 +664,20 @@ type AllComputed<C1, C2, C3, C4, C5, C6, C7, C8> = AddedValues<C1> & AddedValues
  */
 export function createStore<
   S extends object,
-  C1 extends ComputedLayer<Values<S>>,
-  C2 extends ComputedLayer<Values<S> & L<C1>>,
-  C3 extends ComputedLayer<Values<S> & L<C1> & L<C2>>,
-  C4 extends ComputedLayer<Values<S> & L<C1> & L<C2> & L<C3>>,
-  C5 extends ComputedLayer<Values<S> & L<C1> & L<C2> & L<C3> & L<C4>>,
-  C6 extends ComputedLayer<Values<S> & L<C1> & L<C2> & L<C3> & L<C4> & L<C5>>,
-  C7 extends ComputedLayer<Values<S> & L<C1> & L<C2> & L<C3> & L<C4> & L<C5> & L<C6>>,
-  C8 extends ComputedLayer<Values<S> & L<C1> & L<C2> & L<C3> & L<C4> & L<C5> & L<C6> & L<C7>>,
+  C1 extends Vals,
+  C2 extends Vals,
+  C3 extends Vals,
+  C4 extends Vals,
+  C5 extends Vals,
+  C6 extends Vals,
+  C7 extends Vals,
+  C8 extends Vals,
   KA extends KeyActionsMap<S> & NoExtraKeys<KA, S>,
   A extends Record<string, (...args: never[]) => unknown> = NoKeys,
   E extends object = AnyEvents
 >(
   initialState: S,
-  options: StoreOptions<S, A, KA, E> & {
-    computed?:
-      | [C1]
-      | [C1, C2]
-      | [C1, C2, C3]
-      | [C1, C2, C3, C4]
-      | [C1, C2, C3, C4, C5]
-      | [C1, C2, C3, C4, C5, C6]
-      | [C1, C2, C3, C4, C5, C6, C7]
-      | [C1, C2, C3, C4, C5, C6, C7, C8];
-  } = {}
+  options: StoreOptions<S, A, KA, E> & { computed?: ComputedOption<S, C1, C2, C3, C4, C5, C6, C7, C8> } = {}
 ): Store<S, A, KA, AllComputed<C1, C2, C3, C4, C5, C6, C7, C8>, E> &
   ScopeApi<S, Store<S, A, KA, AllComputed<C1, C2, C3, C4, C5, C6, C7, C8>, E>> {
   type CV = AllComputed<C1, C2, C3, C4, C5, C6, C7, C8>;

@@ -22,3 +22,6 @@ graphify-out
 .DS_Store
 Thumbs.db
 .claude
+
+# Local before/after comparison of the computed-layer typing refactor
+.baseline

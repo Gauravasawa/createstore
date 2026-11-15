@@ -91,6 +91,133 @@ events.emit('nope', 1);
 events.emit('job');
 events.on('job', (payload) => expectTypeOf(payload).toEqualTypeOf<{ id: number }>());
 
+// Computed layers: each layer reads state and every earlier layer (guards the generic chain in createStore)
+const noLayers = createStore({ a: 1 });
+void noLayers;
+expectTypeOf<Parameters<typeof noLayers.getState>[0]>().toEqualTypeOf<'a'>();
+
+const oneLayer = createStore({ a: 1 }, { computed: [{ b: (get) => get('a') + 1 }] });
+expectTypeOf(oneLayer.getState('b')).toEqualTypeOf<number>();
+
+const eight = createStore(
+  { a: 1 },
+  {
+    computed: [
+      { l1: (get) => get('a') + 1 },
+      { l2: (get) => `${get('l1')}` },
+      { l3: (get) => get('l2').length > 0 },
+      { l4: (get) => [get('l1')] },
+      { l5: (get) => get('l4').length },
+      { l6: (get) => (get('l3') ? 'y' : 'n') as 'y' | 'n' },
+      { l7: (get) => ({ v: get('l6') }) },
+      { l8: (get) => get('l7').v + get('l2') + get('l1') + get('a') },
+    ],
+  },
+);
+// get('earlierComputed') inside a later layer has the earlier value's real type, not `any`
+expectTypeOf(eight.getState('l1')).toEqualTypeOf<number>();
+expectTypeOf(eight.getState('l2')).toEqualTypeOf<string>();
+expectTypeOf(eight.getState('l3')).toEqualTypeOf<boolean>();
+expectTypeOf(eight.getState('l4')).toEqualTypeOf<number[]>();
+expectTypeOf(eight.getState('l5')).toEqualTypeOf<number>();
+expectTypeOf(eight.getState('l6')).toEqualTypeOf<'y' | 'n'>();
+expectTypeOf(eight.getState('l7')).toEqualTypeOf<{ v: 'y' | 'n' }>();
+expectTypeOf(eight.getState('l8')).toEqualTypeOf<string>();
+expectTypeOf<Parameters<typeof eight.getState>[0]>().toEqualTypeOf<
+  'a' | 'l1' | 'l2' | 'l3' | 'l4' | 'l5' | 'l6' | 'l7' | 'l8'
+>();
+
+// Every layer count from 1 to 8 compiles, and at every depth a layer can read the layer right before it
+const d3 = createStore(
+  { a: 1 },
+  { computed: [{ c1: (get) => get('a') }, { c2: (get) => [get('c1')] }, { c3: (get) => [get('c2')] }] },
+);
+expectTypeOf(d3.getState('c3')).toEqualTypeOf<number[][]>();
+const d4 = createStore(
+  { a: 1 },
+  {
+    computed: [
+      { c1: (get) => get('a') },
+      { c2: (get) => [get('c1')] },
+      { c3: (get) => [get('c2')] },
+      { c4: (get) => [get('c3')] },
+    ],
+  },
+);
+expectTypeOf(d4.getState('c4')).toEqualTypeOf<number[][][]>();
+const d5 = createStore(
+  { a: 1 },
+  {
+    computed: [
+      { c1: (get) => get('a') },
+      { c2: (get) => [get('c1')] },
+      { c3: (get) => [get('c2')] },
+      { c4: (get) => [get('c3')] },
+      { c5: (get) => [get('c4')] },
+    ],
+  },
+);
+expectTypeOf(d5.getState('c5')).toEqualTypeOf<number[][][][]>();
+const d6 = createStore(
+  { a: 1 },
+  {
+    computed: [
+      { c1: (get) => get('a') },
+      { c2: (get) => [get('c1')] },
+      { c3: (get) => [get('c2')] },
+      { c4: (get) => [get('c3')] },
+      { c5: (get) => [get('c4')] },
+      { c6: (get) => [get('c5')] },
+    ],
+  },
+);
+expectTypeOf(d6.getState('c6')).toEqualTypeOf<number[][][][][]>();
+const d7 = createStore(
+  { a: 1 },
+  {
+    computed: [
+      { c1: (get) => get('a') },
+      { c2: (get) => [get('c1')] },
+      { c3: (get) => [get('c2')] },
+      { c4: (get) => [get('c3')] },
+      { c5: (get) => [get('c4')] },
+      { c6: (get) => [get('c5')] },
+      { c7: (get) => [get('c6')] },
+    ],
+  },
+);
+expectTypeOf(d7.getState('c7')).toEqualTypeOf<number[][][][][][]>();
+const d8 = createStore(
+  { a: 1 },
+  {
+    computed: [
+      { c1: (get) => get('a') },
+      { c2: (get) => [get('c1')] },
+      { c3: (get) => [get('c2')] },
+      { c4: (get) => [get('c3')] },
+      { c5: (get) => [get('c4')] },
+      { c6: (get) => [get('c5')] },
+      { c7: (get) => [get('c6')] },
+      { c8: (get) => [get('c7')] },
+    ],
+  },
+);
+expectTypeOf(d8.getState('c8')).toEqualTypeOf<number[][][][][][][]>();
+
+// A layer cannot read a later layer, or itself
+createStore(
+  { a: 1 },
+  {
+    computed: [
+      // @ts-expect-error l2 is declared in a later layer
+      { l1: (get) => get('l2') },
+      { l2: (get) => get('a') },
+    ],
+  },
+);
+// @ts-expect-error a value in the same layer is not visible to its sibling
+createStore({ a: 1 }, { computed: [{ x: (get) => get('a'), y: (get) => get('x') }] });
+
 // Options: a typo is a compile error for TypeScript users (JavaScript users get the runtime warning)
 // @ts-expect-error not an option
 createStore({ a: 1 }, { persits: true });
