@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.1.2](https://github.com/Gauravasawa/createstore/compare/v1.1.1...v1.1.2) (2026-11-15)
+
+### Bug Fixes
+
+* **types:** type earlier computed values inside later layers instead of any ([e81eb82](https://github.com/Gauravasawa/createstore/commit/e81eb829c806a70cf0e479d235f384056be0595a))
+
+### Documentation
+
+* add SEO, answer-engine and AI-agent optimisation to the docs site ([c91c026](https://github.com/Gauravasawa/createstore/commit/c91c0263e5f915cb10743da19f9c1823aed901dc))
+* per-section pages, speed and layout fixes, crawler policy, security.txt ([2445639](https://github.com/Gauravasawa/createstore/commit/24456393b5e7bcb8affea1a7ca9ed698b1c30a8e))
+* serve security.txt from /security.txt, Cloudflare skips dot-folders ([753ff17](https://github.com/Gauravasawa/createstore/commit/753ff17c1a8cd1684c68db70a4f0afa5d7f6c276))
+
 ## [1.1.1](https://github.com/Gauravasawa/createstore/compare/v1.1.0...v1.1.1) (2026-11-11)
 
 ### Bug Fixes
