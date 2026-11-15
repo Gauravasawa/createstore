@@ -1,6 +1,8 @@
 // Error messages are part of the product: a mistake should say what is wrong and what to do about it.
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { createStore, query } from '@createstore/createstore';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { createStore, defineEvents, query } from '@createstore/createstore';
 
 afterEach(() => vi.restoreAllMocks());
 const warnings = () => vi.spyOn(console, 'warn').mockImplementation(() => {});
@@ -38,9 +40,67 @@ describe('mistakes in createStore() options', () => {
         computed: [{ b: (get) => get('a') + 1 }],
         keyActions: {},
         actions: () => ({}),
+        onSaveStart: () => {},
+        onSaveSuccess: () => {},
+        onSaveError: () => {},
       },
     );
     expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('every option declared in the built StoreOptions type is accepted without a warning (the list comes from the types)', () => {
+    const dts = readFileSync(resolve(process.cwd(), 'dist/types/createStore.d.ts'), 'utf8');
+    const body = dts.match(/interface StoreOptions<[^{]*\{([\s\S]*?)\r?\n\}/)?.[1] ?? '';
+    const declared = [...body.matchAll(/^ {4}([a-zA-Z]+)\??:/gm)].map((m) => m[1]); // top level only (4 spaces); nested members have 8
+    expect(declared.length).toBeGreaterThanOrEqual(17); // the regex found the interface, not an empty match
+    const samples: Record<string, unknown> = {
+      name: 'opt-name',
+      persist: false,
+      syncTabs: false,
+      history: false,
+      devtools: false,
+      shared: false,
+      ssr: false,
+      logger: false,
+      onChange: () => {},
+      offline: false,
+      validate: () => true,
+      events: defineEvents<{ e: string }>(),
+      actions: () => ({}),
+      keyActions: {},
+      onSaveStart: () => {},
+      onSaveSuccess: () => {},
+      onSaveError: () => {},
+    };
+    const warn = warnings();
+    for (const key of declared) {
+      expect(key in samples, `StoreOptions has a new option "${key}": add a sample for it to this test`).toBe(true);
+      createStore({ a: 1 }, { ...(key === 'name' ? {} : { name: `opt-${key}` }), [key]: samples[key] } as never);
+    }
+    expect(warn.mock.calls.map((c) => String(c[0])).filter((m) => m.includes('has no option'))).toEqual([]);
+  });
+
+  it('the onSave callbacks are real options: no "ignored" warning, and they still run', async () => {
+    const warn = warnings();
+    const seen: string[] = [];
+    const store = createStore(
+      { n: 0 },
+      {
+        name: 'on-save-real',
+        onSaveStart: (key, action) => seen.push(`start ${key}.${action}`),
+        onSaveSuccess: (key, action) => seen.push(`ok ${key}.${action}`),
+        keyActions: { n: { inc: { run: (c: number) => c + 1, save: async () => {} } } },
+      },
+    );
+    await store.set.n.inc();
+    expect(seen).toEqual(['start n.inc', 'ok n.inc']);
+    expect(warn.mock.calls.flat().join(' ')).not.toMatch(/has no option/);
+  });
+
+  it('a made-up option still warns, and the list it prints now includes the onSave options', () => {
+    const warn = warnings();
+    createStore({ a: 1 }, { name: 'typo-3', onSaveStrat: () => {} } as never);
+    expect(String(warn.mock.calls[0][0])).toMatch(/no option "onSaveStrat".*onSaveStart, onSaveSuccess, onSaveError/);
   });
 
   it('persist, syncTabs, offline or shared without a name warns: two unnamed stores would overwrite each other', () => {

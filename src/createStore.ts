@@ -690,10 +690,14 @@ export function createStore<
   return withScopes<S, A, KA, CV, E>(initialState, options, makeBase<S, A, KA, CV, E>(initialState, options));
 }
 
-const STORE_OPTIONS = new Set([
-  'name', 'persist', 'syncTabs', 'history', 'devtools', 'shared', 'ssr', 'logger', 'onChange', 'offline',
-  'validate', 'events', 'computed', 'keyActions', 'actions', 'queries',
-]);
+// One entry per StoreOptions member, plus the two the types add elsewhere. `satisfies` fails the build if one is
+// missing or extra, so the "has no option" warning below can never name an option that exists.
+const OPTION_NAMES = {
+  name: 1, persist: 1, syncTabs: 1, history: 1, devtools: 1, shared: 1, ssr: 1, logger: 1, onChange: 1, offline: 1,
+  validate: 1, events: 1, computed: 1, keyActions: 1, actions: 1, queries: 1,
+  onSaveStart: 1, onSaveSuccess: 1, onSaveError: 1,
+} satisfies Record<keyof StoreOptions<object, never> | 'computed' | 'queries', 1>;
+const STORE_OPTIONS = /* @__PURE__ */ new Set(/* @__PURE__ */ Object.keys(OPTION_NAMES)); // pure: dropped when createStore is unused
 const warnedOptions = new Set<string>();
 /** A typo in an option ("persits") or a persisted store with no name is a silent bug: say so, once */
 function checkStoreOptions(opts: object) {
@@ -3099,6 +3103,15 @@ function build<
     const version = versions.get(k) ?? 0;
     const controller = new AbortController();
     namedAborts.set(k, controller);
+    const fail = (error: unknown): never => {
+      const idle = { isFetching: false, fetchingNext: false };
+      if (!controller.signal.aborted) setEntry(k, { ...idle, error, status: 'error' });
+      // Aborted is a cancel, not a failure: keep any data, no error status.
+      // After reset() the controller is gone: leave the fresh cache alone.
+      else if (namedAborts.get(k) === controller)
+        setEntry(k, { ...idle, status: cache.get(k)?.data === undefined ? 'idle' : 'success', aborted: true });
+      throw error;
+    };
     const promise: Promise<unknown> = withRetry(
       (_params, signal) => load(signal),
       undefined,
@@ -3113,7 +3126,15 @@ function build<
             if (inflight.get(k) === promise) inflight.delete(k);
             return restart();
           }
-          const data = toData(response);
+          // toData runs the caller's pages.next(): if it throws, the entry must fail like any other failed
+          // request. A .then(onSuccess, onError) pair would not route it to onError, and the entry would
+          // stay "fetching" forever.
+          let data: unknown;
+          try {
+            data = toData(response);
+          } catch (error) {
+            return fail(error);
+          }
           setEntry(k, {
             data,
             error: undefined,
@@ -3124,15 +3145,7 @@ function build<
           });
           return data;
         },
-        (error) => {
-          const idle = { isFetching: false, fetchingNext: false };
-          if (!controller.signal.aborted) setEntry(k, { ...idle, error, status: 'error' });
-          // Aborted is a cancel, not a failure: keep any data, no error status.
-          // After reset() the controller is gone: leave the fresh cache alone.
-          else if (namedAborts.get(k) === controller)
-            setEntry(k, { ...idle, status: cache.get(k)?.data === undefined ? 'idle' : 'success', aborted: true });
-          throw error;
-        }
+        fail
       )
       .finally(() => {
         if (inflight.get(k) === promise) inflight.delete(k);
