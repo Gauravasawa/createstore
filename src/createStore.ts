@@ -3757,7 +3757,8 @@ function build<
         getStatus: () => getStatus(key),
         statusSubscribe: canChange ? subscribeTo(statusChannel(key)) : noSubscribe,
         statusCanChange: canChange,
-        cell: () => (last = cellOf(last, readKey(key))),
+        // Starts from the hydration cell: when the values match, React sees the same object and skips a second render
+        cell: () => (last = cellOf(last ?? lastServer, readKey(key))),
         serverCell: () => (lastServer = serverCellOf(lastServer, readServer(key))),
         idleCell: () => (lastIdle = idleOf(lastIdle, readKey(key))),
         serverIdleCell: () => (lastServerIdle = idleOf(lastServerIdle, readServer(key))),
