@@ -1,0 +1,9 @@
+{
+  "name": "createstore-bench",
+  "private": true,
+  "description": "Re-render benchmark: createStore vs Zustand vs React Context. Not published.",
+  "type": "module",
+  "devDependencies": {
+    "zustand": "5.1.0"
+  }
+}

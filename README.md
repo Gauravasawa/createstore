@@ -16,7 +16,7 @@ Not related to Redux's `createStore` function: this is a separate library, insta
   and when you also need server data, saved state, undo, tab sync or offline support behind the same API.
 - **It is fastest** when many components read different keys, because only readers of a changed key re-render.
 - **Look elsewhere** if you need to support React 18 or older, or if every component re-renders on every change
-  (Zustand is faster there; see `bench/`).
+  (Zustand is faster there; see [the benchmark](./bench/README.md)).
 
 ## Quick start
 
