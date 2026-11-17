@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.1.3](https://github.com/Gauravasawa/createstore/compare/v1.1.2...v1.1.3) (2026-11-17)
+
+### Bug Fixes
+
+* keep other tabs' saved changes, warn on storage failures, replay offline tasks in order ([e0aaf7a](https://github.com/Gauravasawa/createstore/commit/e0aaf7ab7197a80ad2d3cf8a76b0107a9db09da7))
+* render key-form components once on hydration when the value matches the server ([1316968](https://github.com/Gauravasawa/createstore/commit/13169680ab9b7fe1b062ec861c8b239f37a0fd32))
+* report real createStore options and surface errors thrown by pages.next() ([85ceee9](https://github.com/Gauravasawa/createstore/commit/85ceee9be0d3fda31b26cad136f06d6447b91371))
+
+### Documentation
+
+* **README:** add the re-render benchmark against Zustand and React Context ([2b5d12f](https://github.com/Gauravasawa/createstore/commit/2b5d12ff7633c60184fd127bf5f3df8257300d34))
+
 ## [1.1.2](https://github.com/Gauravasawa/createstore/compare/v1.1.1...v1.1.2) (2026-11-15)
 
 ### Bug Fixes
