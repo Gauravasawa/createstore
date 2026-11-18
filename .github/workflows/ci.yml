@@ -45,7 +45,9 @@ jobs:
         include:
           - os: windows-latest
             node: '22'
-          - os: macos-latest
+          # Intel macOS 26 (same OS as macos-latest): Apple-silicon runners were short of capacity and left the job
+          # unassigned. The library is plain JavaScript, so the chip doesn't change what these tests check.
+          - os: macos-26-intel
             node: '22'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
