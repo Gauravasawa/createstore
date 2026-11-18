@@ -1,5 +1,7 @@
 # @createstore/createstore
 
+[![Socket Badge](https://badge.socket.dev/npm/package/@createstore/createstore)](https://badge.socket.dev/npm/package/@createstore/createstore)
+
 Global state that works like `useState`, shared by every component. No provider, no reducers, no action types.
 
 ```sh
