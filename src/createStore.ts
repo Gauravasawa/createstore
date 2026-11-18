@@ -39,8 +39,8 @@ const APP_PERSIST = Symbol('createStore.appPersist');
 const ALL_PAGES = Symbol('createStore.allPages');
 /** Internal: ClientRoot merges a later page's server data into the store named `name` */
 export function __mergeSnapshot(name: string, snapshot: unknown) {
-  const store = storesByName.get(name) as Record<symbol, ((s: unknown) => void) | undefined> | undefined;
-  store?.[MERGE]?.(snapshot);
+  const store = storesByName.get(name);
+  if (store) internals(store)[MERGE]?.(snapshot);
 }
 
 /**
@@ -892,8 +892,8 @@ function makeBase<S extends object, A, KA, CV, E extends object>(
   // #12: a hot reload that changed the definition gets the old store (that's what `shared` is
   // for), so say so instead of silently using the old keys, computed values and actions
   const shape = definitionShape(initialState, options);
-  const existing = g[slot] as (Store<S, A, KA, CV, E> & Record<symbol, string>) | undefined;
-  if (existing && existing[SHAPE] !== shape && !warnedShape.has(slot) && warnedShape.add(slot))
+  const existing = g[slot] as Store<S, A, KA, CV, E> | undefined;
+  if (existing && internals(existing)[SHAPE] !== shape && !warnedShape.has(slot) && warnedShape.add(slot))
     console.warn(
       `[${options.name ?? 'store'}] the store's definition changed (a hot reload?), but shared: true keeps the existing store, ` +
         `with its old keys, computed values and actions. Reload the page to use the new definition.`,
@@ -1009,13 +1009,14 @@ function withScopes<S extends object, A, KA, CV, E extends object>(
   const guard = !!options.ssr;
   // React's server build has no createContext; the Server Component path below never uses Ctx
   const Ctx = (RSC ? null : createContext<Inst | null>(null)) as ReturnType<typeof createContext<Inst | null>>;
-  const seedOf = (inst: Inst) => (inst as unknown as Record<symbol, (v: Record<string, unknown>) => void>)[SEED];
-  const b = base as unknown as Record<string | symbol, unknown>;
+  const seedOf = (inst: Inst) => internals(inst)[SEED];
+  const b = base as unknown as Record<string, unknown>; // members added below by name (createScope, Root, hydrate...)
+  const hidden = internals(base);
   // A shared store is wrapped again after hot reloading: keep its original hooks from the first time
-  const own = (b[OWN_HOOKS] ??= {
+  const own = (hidden[OWN_HOOKS] ??= {
     useGlobalState: b.useGlobalState,
     useHistory: b.useHistory,
-  }) as OwnHooks;
+  } as OwnHooks);
   const stateKeys = new Set([...Object.keys(initialState), '$queries', '$ages', '$version']);
   const ssrVersion = (options.ssr && typeof options.ssr === 'object' && options.ssr.version) || 0;
 
@@ -1033,7 +1034,7 @@ function withScopes<S extends object, A, KA, CV, E extends object>(
         devtools: false,
         ...({ [APP_PERSIST]: (options as Record<symbol, unknown>)[APP_PERSIST] ?? options.persist } as object), // what the app saves: kept out of snapshots
       },
-      (base as unknown as Record<symbol, Definition>)[DEFINITION],
+      hidden[DEFINITION],
     );
     if (initial) seedOf(scope)(initial as Record<string, unknown>);
     ownScopes.add(scope);
@@ -1131,15 +1132,14 @@ function withScopes<S extends object, A, KA, CV, E extends object>(
     }
     const snap = snapshot as Record<string, unknown>;
     if ((snap.$version ?? 0) !== ssrVersion) return; // another version's data: not merged
-    const queryDefs = (b[DEFINITION] as Definition | undefined)?.queryDefs ?? {};
+    const queryDefs = hidden[DEFINITION]?.queryDefs ?? {};
     const serverData: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(snap))
       if (k === '$queries' || k === '$ages' || k in queryDefs) serverData[k] = v;
     seedOf(base)(serverData);
   };
-  b[MERGE] = fromServer;
-  const withHeldNotify = (fn: () => void) =>
-    ((b[QUIET] as ((f: () => void) => void) | undefined) ?? ((f: () => void) => f()))(fn);
+  hidden[MERGE] = fromServer;
+  const withHeldNotify = (fn: () => void) => (hidden[QUIET] ?? ((f: () => void) => f()))(fn);
   if (options.name && !onServer()) storesByName.set(name, base);
 
   const Root = ({ scope, children }: { scope?: Inst; children?: ReactNode }) => {
@@ -1499,6 +1499,21 @@ interface Definition {
 }
 const SETTER_OF = Symbol('createStore.setterOf');
 const DEFINITION = Symbol('createStore.definition');
+/**
+ * The values every store carries besides its public members, under symbols, so they never show up as store.<name>.
+ * build() sets the first four; withScopes and makeBase add the optional ones.
+ */
+interface StoreInternals {
+  [SETTER_OF]: (key: string) => unknown; // store.<key> getters ask the store for that key's setter
+  [SEED]: (values: Record<string, unknown>) => void; // createScope / Root / hydrate fill the store with initial data
+  [QUIET]: (fn: () => void) => void; // run fn with notifications held until the next microtask
+  [DEFINITION]: Definition; // keys, queries and computed values, shared by a store and its scopes
+  [MERGE]?: (snapshot: unknown) => void; // ClientRoot: a later page's server data
+  [OWN_HOOKS]?: OwnHooks; // the store's own hooks, before createStore routes them through <Root>
+  [SHAPE]?: string; // shared: true, what the definition looked like (hot reload check)
+}
+/** A store's internal values, typed. Type only: it returns the same object. */
+const internals = (store: object) => store as StoreInternals;
 /** Same keys, same values (by identity): no allocation beyond the key list */
 function sameEntries(a: Record<string, unknown>, b: object): boolean {
   const keys = Object.keys(b);
@@ -1564,7 +1579,7 @@ function definitionOf(initialState: object, name: string): Definition {
   for (const k of keys)
     Object.defineProperty(setProto, k, {
       enumerable: true,
-      get(this: Record<symbol, (key: string) => unknown>) {
+      get(this: StoreInternals) {
         return this[SETTER_OF](k);
       },
     });
@@ -1604,7 +1619,7 @@ function setterProtoOf(def: Definition, memberNames: object, field: 'apiProto'):
     if (k in memberNames || k in Object.prototype) continue;
     Object.defineProperty(proto, k, {
       enumerable: true,
-      get(this: Record<symbol, (key: string) => unknown>) {
+      get(this: StoreInternals) {
         return this[SETTER_OF](k);
       },
     });
@@ -1628,7 +1643,7 @@ function directProtoOf(def: Definition, memberNames: object, name: string): obje
     }
     Object.defineProperty(proto, k, {
       enumerable: true,
-      get(this: Record<symbol, (key: string) => unknown>) {
+      get(this: StoreInternals) {
         return this[SETTER_OF](k);
       },
     });
@@ -4873,9 +4888,10 @@ function build<S extends object, A, KA, CV, E extends object = AnyEvents>(
   } as unknown as { new (): typeof members; prototype: object };
   Store.prototype = directProtoOf(def, members, name); // shared by every scope of this store
   const store = new Store();
-  Object.defineProperty(store, SETTER_OF, { value: setterFor });
-  Object.defineProperty(store, SEED, { value: seed });
-  Object.defineProperty(store, QUIET, { value: holdingNotify });
-  Object.defineProperty(store, DEFINITION, { value: def });
+  // The internal values (see StoreInternals); `satisfies` checks each against it at compile time only
+  Object.defineProperty(store, SETTER_OF, { value: setterFor satisfies StoreInternals[typeof SETTER_OF] });
+  Object.defineProperty(store, SEED, { value: seed satisfies StoreInternals[typeof SEED] });
+  Object.defineProperty(store, QUIET, { value: holdingNotify satisfies StoreInternals[typeof QUIET] });
+  Object.defineProperty(store, DEFINITION, { value: def satisfies StoreInternals[typeof DEFINITION] });
   return store as typeof members & DirectSetters<S, KA>;
 }
