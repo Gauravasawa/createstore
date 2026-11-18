@@ -83,6 +83,16 @@ Accounts: use a passkey or hardware key for 2FA on GitHub and npm, and keep the 
   exception lives in `scripts/check-audit.mjs` (`npm run audit:dev`), which the security workflow runs instead of
   `npm audit --audit-level=high`: any other high or critical advisory still fails, and this one fails again after
   its date. When picomatch ships a fix, update the lockfile and delete the exception.
+- **Open, no fix possible yet: medium advisory GHSA-g3hv-75wg-m249 in `minimatch` (Dependabot alert #2).** The
+  repository's own `minimatch` is 11.0.9 (fixed). The vulnerable copy, 10.2.5, is bundled inside the `npm` package
+  that `@semantic-release/npm` installs, and a bundled copy can't be replaced: overrides of `minimatch`,
+  `npm > minimatch` and `@semantic-release/npm > npm > minimatch` were all tested and leave it in place. Every npm
+  release so far (up to 12.2.3) still bundles `minimatch ^10.2.5`, and the fix exists only in 11.0.1 and later.
+  Dependabot's suggested downgrade to semantic-release 21 doesn't help either: it brings npm 9, which bundles
+  `minimatch ^9.0.3`, also in the vulnerable range (7.0.0 up to 11.0.1). It runs only in the release job, on the
+  `files` patterns in this repository's `package.json`. The alert stays open on purpose and closes by itself when a
+  release of npm that bundles minimatch 11 reaches the lockfile; then run `npm update npm` (or wait for Dependabot).
+  It doesn't fail the security workflow, which gates on high and critical advisories.
 - Fixed: `getState('__proto__')` (also `'constructor'`, `'toString'` and similar) used to return `Object.prototype` or
   a built-in function. Reads now use the store's own keys only, so any name that isn't a key reads as `undefined`
   (`spec/security.spec.ts`).
