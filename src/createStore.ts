@@ -495,8 +495,17 @@ export interface PersistOptions<S = Record<string, unknown>> {
   /** Turn data saved by an older version into the current shape. Without it, old data is dropped. */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- old data has the shape an older version saved; the user types it
   migrate?: (persisted: any, version: number) => unknown;
-  /** Wait this many ms after the last change before saving (typing doesn't write on every key). Flushed when the page is hidden. */
+  /**
+   * Wait this many ms after the last change before saving (typing doesn't write on every key). Flushed when the page is
+   * hidden. Off by default: every change saves at once, which rewrites all saved keys; set it for large or fast-changing state.
+   */
   debounce?: number;
+  /**
+   * Async storage only (IndexedDB adapters...): when the page closes before a save has finished, the same JSON is
+   * also written to localStorage, in plain text, so the next load can use it. Default true. Set false when saved
+   * state is sensitive and must stay out of localStorage; a save still in flight at close may then be lost.
+   */
+  rescue?: boolean;
 }
 
 export interface StoreOptions<S, A, KA = NoKeys, E extends object = AnyEvents> {
@@ -549,6 +558,24 @@ export interface StoreOptions<S, A, KA = NoKeys, E extends object = AnyEvents> {
   onSaveStart?: (key: string, action: string) => void;
   onSaveSuccess?: (key: string, action: string) => void;
   onSaveError?: (key: string, action: string, error: unknown) => void;
+  /**
+   * Receives every failure that happens while the app runs: storage that can't be read or written, saved or offline
+   * data that is unreadable or rejected by validate, a listener that throws, a change that can't reach other tabs, a
+   * query load that failed after its retries, a server data tag that can't be used. With onError these no longer go
+   * to the console. Developer mistakes (a wrong option, a misused API) still warn on the console.
+   */
+  onError?: (error: Error, info: ErrorInfo) => void;
+}
+
+/** Where a failure reported to `onError` happened */
+export type ErrorSource = 'storage' | 'offline' | 'sync' | 'validate' | 'listener' | 'query' | 'hydrate';
+/** What `onError` receives besides the error */
+export interface ErrorInfo {
+  /** The store's name */
+  store: string;
+  source: ErrorSource;
+  /** The state or query key involved, when there is one */
+  key?: string;
 }
 
 /* =========================================================================
@@ -786,9 +813,18 @@ const OPTION_NAMES = {
   onSaveStart: 1,
   onSaveSuccess: 1,
   onSaveError: 1,
+  onError: 1,
 } satisfies Record<keyof StoreOptions<object, never> | 'computed' | 'queries', 1>;
 const STORE_OPTIONS = /* @__PURE__ */ new Set(/* @__PURE__ */ Object.keys(OPTION_NAMES)); // pure: dropped when createStore is unused
 const warnedOptions = new Set<string>();
+/** Bundlers replace process.env.NODE_ENV; without one (plain browser ESM) `process` is missing: treated as production */
+function isDevelopment() {
+  try {
+    return process.env.NODE_ENV !== 'production';
+  } catch {
+    return false;
+  }
+}
 /** A typo in an option ("persits") or a persisted store with no name is a silent bug: say so, once */
 function checkStoreOptions(opts: object) {
   const options = opts as Record<string, unknown>;
@@ -803,6 +839,14 @@ function checkStoreOptions(opts: object) {
       warn(
         `[${id}] createStore() has no option "${k}", so it is ignored. Options: ${[...STORE_OPTIONS].filter((o) => o !== 'queries').join(', ')}.`,
       );
+  // Data the store didn't write itself is used as is unless validate checks it (development builds only)
+  const unchecked = (['persist', 'syncTabs', 'offline'] as const).filter((k) => options[k]);
+  if (unchecked.length && !options.validate && typeof window !== 'undefined' && isDevelopment())
+    warn(
+      `[${id}] ${unchecked.join(', ')} ${unchecked.length > 1 ? 'load' : 'loads'} data this store didn't write (saved state, other tabs, ` +
+        `the offline copy), and nothing checks its type: a value of the wrong type is used as is. Add validate: (key, value, from) => ` +
+        `boolean to check it. Shown in development only.`,
+    );
   if (!options.name && (options.persist || options.syncTabs || options.offline || options.shared))
     warn(
       `[store] persist, syncTabs, offline and shared use the store's name to tell stores apart. Without { name: '...' }, every unnamed ` +
@@ -996,6 +1040,8 @@ function withScopes<S extends object, A, KA, CV, E extends object>(
     return scope;
   };
 
+  /** Server data that can't be used as sent: to onError, or to the console as before */
+  const dataTagProblem = (message: string) => reportFailure(options.onError, name, 'hydrate', message);
   // The data tag scope.toScript() wrote, read once and removed (null if there isn't one)
   const readDataTag = (): Snapshot<S> | null => {
     if (!options.name) {
@@ -1014,11 +1060,11 @@ function withScopes<S extends object, A, KA, CV, E extends object>(
     const el = tags[tags.length - 1];
     const others = document.querySelectorAll(`[id="${id.replace(/"/g, '\\"')}"]`).length - (el ? 1 : 0);
     if (others > 0)
-      console.warn(
+      dataTagProblem(
         `[${name}] hydrate() found ${others} other element(s) with the data tag's id "${id}" and ignored them: only the last <script type="application/json"> (the one toScript() writes after the page) is read. If the page shows user-written HTML, that's where they came from.`,
       );
     if (!el) {
-      console.warn(
+      dataTagProblem(
         `[${name}] hydrate() found no data tag (id "${dataTagId(name)}"), so the app starts from its initial state. Did the server add scope.toScript() to the page?`,
       );
       return null;
@@ -1027,7 +1073,7 @@ function withScopes<S extends object, A, KA, CV, E extends object>(
     try {
       return JSON.parse(el.textContent ?? 'null') as Snapshot<S> | null;
     } catch {
-      console.warn(
+      dataTagProblem(
         `[${name}] hydrate() couldn't read the data tag (not valid JSON), so the app starts from its initial state.`,
       );
       return null;
@@ -1049,7 +1095,7 @@ function withScopes<S extends object, A, KA, CV, E extends object>(
       const given =
         snapshot && typeof snapshot === 'object' ? ((snapshot as { $version?: unknown }).$version ?? 0) : ssrVersion;
       if (given !== ssrVersion) {
-        console.warn(
+        dataTagProblem(
           `[${name}] hydrate() ignored a snapshot made for version ${String(given)}; this app expects version ${ssrVersion} (ssr.version). The page renders from the initial state instead.`,
         );
         return base;
@@ -1063,7 +1109,7 @@ function withScopes<S extends object, A, KA, CV, E extends object>(
         }
         // A snapshot can come from an older deployment: a removed key shouldn't break the page
         if (notInStore.length)
-          console.warn(
+          dataTagProblem(
             `[${name}] hydrate() ignored ${notInStore.map((k) => `"${k}"`).join(', ')}: not in the store. Was the snapshot made by another version of the app?`,
           );
         seedOf(base)(known);
@@ -1241,8 +1287,39 @@ const sleep = (ms: number, signal: AbortSignal) =>
 const isThenable = (v: unknown): v is PromiseLike<unknown> =>
   v != null && typeof (v as { then?: unknown }).then === 'function';
 
+/**
+ * A failure while the app runs: to options.onError when there is one (an Error with this message, the original error
+ * as its cause), otherwise to the console exactly as before. `print`: the console line shows `error` after the message.
+ * `quiet`: nothing on the console without onError (failed query loads, which only set the status).
+ */
+function reportFailure(
+  onError: ((error: Error, info: ErrorInfo) => void) | undefined,
+  store: string,
+  source: ErrorSource,
+  message: string,
+  more: { level?: 'warn' | 'error'; error?: unknown; print?: boolean; key?: string; quiet?: boolean } = {},
+) {
+  const { level = 'warn', error, print = error !== undefined, key, quiet } = more;
+  if (!onError) {
+    if (quiet) return;
+    if (print) console[level](message, error);
+    else console[level](message);
+    return;
+  }
+  try {
+    const info: ErrorInfo = key === undefined ? { store, source } : { store, source, key };
+    onError(new Error(message, error === undefined ? undefined : { cause: error }), info);
+  } catch (thrown) {
+    console.error(`[${store}] onError threw:`, thrown);
+  }
+}
+
 /* ---------- Stable keys for query params ---------- */
 
+// Cross-tab clocks: any stamp up to MAX_STAMP is accepted; above it, at most MAX_STAMP_STEP ahead of this tab's clock.
+// Exhausting the rest of the safe range would then take billions of messages.
+const MAX_STAMP = Math.floor(Number.MAX_SAFE_INTEGER / 2);
+const MAX_STAMP_STEP = 1_000_000;
 const MAX_KEY_DEPTH = 100;
 // Params past these limits throw instead of costing CPU on every render and request
 const MAX_KEY_VALUES = 10_000;
@@ -1280,6 +1357,11 @@ keyOf.tooLarge = (): never => {
     `Query params are too large (more than ${MAX_KEY_VALUES.toLocaleString('en')} values) to use as a cache key. Pass an id or a small filter object instead.`,
   );
 };
+keyOf.tooLong = (): never => {
+  throw new Error(
+    `Query params are too large (more than ${MAX_KEY_CHARS.toLocaleString('en')} characters) to use as a cache key. Pass an id or a small filter object instead.`,
+  );
+};
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- inspects arbitrary values (Map, Date, boxed...)
 function keyOf(v: any, ancestors: object[], depth: number): string {
@@ -1289,10 +1371,7 @@ function keyOf(v: any, ancestors: object[], depth: number): string {
     );
   switch (typeof v) {
     case 'string':
-      if ((keyChars += v.length) > MAX_KEY_CHARS)
-        throw new Error(
-          `Query params are too large (more than ${MAX_KEY_CHARS.toLocaleString('en')} characters) to use as a cache key. Pass an id or a small filter object instead.`,
-        );
+      if ((keyChars += v.length) > MAX_KEY_CHARS) keyOf.tooLong();
       return JSON.stringify(v);
     case 'number':
       return Object.is(v, -0) ? '-0' : String(v); // also "NaN", "Infinity", "-Infinity"
@@ -1332,9 +1411,15 @@ function keyOf(v: any, ancestors: object[], depth: number): string {
       tag === '[object BigInt]'
     )
       return `#Boxed(${keyOf(v.valueOf(), ancestors, depth + 1)})`;
-    if (v instanceof ArrayBuffer) return `#ArrayBuffer(${Array.from(new Uint8Array(v)).join(',')})`;
-    if (ArrayBuffer.isView(v))
+    // Every byte becomes a number in the key, so bytes count toward the value limit
+    if (v instanceof ArrayBuffer) {
+      if ((keyValues += v.byteLength) > MAX_KEY_VALUES) keyOf.tooLarge();
+      return `#ArrayBuffer(${Array.from(new Uint8Array(v)).join(',')})`;
+    }
+    if (ArrayBuffer.isView(v)) {
+      if ((keyValues += v.byteLength) > MAX_KEY_VALUES) keyOf.tooLarge();
       return `#${v.constructor?.name ?? 'View'}(${Array.from(new Uint8Array(v.buffer, v.byteOffset, v.byteLength)).join(',')})`;
+    }
   }
 
   ancestors.push(v);
@@ -1365,6 +1450,7 @@ function keyOf(v: any, ancestors: object[], depth: number): string {
     if (keys.length > 1) keys.sort();
     let out = '';
     for (const k of keys) {
+      if ((keyChars += k.length) > MAX_KEY_CHARS) keyOf.tooLong(); // key names are part of the key too
       const item = v[k];
       if (item !== undefined) out += `${out ? ',' : ''}${JSON.stringify(k)}:${keyOf(item, ancestors, next)}`; // undefined = absent, like JSON
     }
@@ -1564,6 +1650,9 @@ function build<S extends object, A, KA, CV, E extends object = AnyEvents>(
   type StateKey = keyof S & string;
   const name = options.name ?? 'store';
   const isBrowser = typeof window !== 'undefined';
+  /** A failure while the app runs: to options.onError, or to the console as before (see reportFailure) */
+  const problem = (source: ErrorSource, message: string, more?: Parameters<typeof reportFailure>[4]) =>
+    reportFailure(options.onError, name, source, message, more);
 
   /* ---------- Sort keys into plain, query and computed ---------- */
 
@@ -1961,9 +2050,11 @@ function build<S extends object, A, KA, CV, E extends object = AnyEvents>(
   const reportWriteFailure = (what: string, error: unknown) => {
     if (reportedWrites.has(what)) return;
     reportedWrites.add(what);
-    console.warn(
+    problem(
+      what === 'the state' ? 'storage' : 'offline',
       `[${name}] couldn't save ${what}: ${(error as Error)?.message ?? String(error)}. The store keeps working in memory, ` +
         `but nothing more is saved until writing works again (is the storage full or blocked?).`,
+      { error, print: false },
     );
   };
   // The offline cache (options.offline): JSON in localStorage; a failed write is reported once, the store carries on
@@ -1978,7 +2069,8 @@ function build<S extends object, A, KA, CV, E extends object = AnyEvents>(
         ls?.removeItem(`${name}:${suffix}`);
         if (!warnedOfflineSize) {
           warnedOfflineSize = true;
-          console.warn(
+          problem(
+            'offline',
             `[${name}] the offline copy of server data is ${text.length.toLocaleString('en')} characters, more than offline.maxSize (${offlineMax.toLocaleString('en')}), so it isn't saved. Raise offline: { maxSize }, or keep large responses out of the store.`,
           );
         }
@@ -2017,8 +2109,10 @@ function build<S extends object, A, KA, CV, E extends object = AnyEvents>(
       if (ok) out[k] = v;
       else if (!warnedInvalid.has(`${from}:${nameOf(k)}`)) {
         warnedInvalid.add(`${from}:${nameOf(k)}`);
-        console.warn(
+        problem(
+          'validate',
           `[${name}] validate() rejected "${nameOf(k)}" from ${from === 'remote' ? 'another tab' : from === 'offline' ? 'the offline copy' : 'saved state'}: ${from === 'remote' ? 'it keeps its current value' : 'it falls back to its initial value'}.`,
+          { key: nameOf(k) },
         );
       }
     }
@@ -2068,7 +2162,8 @@ function build<S extends object, A, KA, CV, E extends object = AnyEvents>(
   const persistKey = `${name}:state`;
   // A storage that isn't there at all (blocked, private mode): said once, instead of silently saving nothing
   if (persistCfg && isBrowser && !persistStorage)
-    console.warn(
+    problem(
+      'storage',
       `[${name}] persist is on, but the browser's storage isn't available (blocked or private mode?), so nothing is saved.`,
     );
   /** Failures, sync or async, never break the store: they are reported once (see reportWriteFailure) */
@@ -2161,9 +2256,11 @@ function build<S extends object, A, KA, CV, E extends object = AnyEvents>(
             return true;
           }
         });
-        console.warn(
+        problem(
+          'storage',
           `[${name}] couldn't save${bad ? ` "${bad}"` : ''}: ${(error as Error).message}. Saved state is JSON, so keep persisted keys to strings, numbers, ` +
             `booleans, null, arrays and plain objects, or leave this key out of saving with persist: { exclude: [...] }. Nothing is saved until it is fixed.`,
+          { error, print: false, key: bad },
         );
       }
       return;
@@ -2184,8 +2281,9 @@ function build<S extends object, A, KA, CV, E extends object = AnyEvents>(
     persistedBase = data;
     dirtyKeys.clear();
   };
+  const rescueOn = !(typeof options.persist === 'object' && options.persist.rescue === false);
   const writeRescue = () => {
-    if (!storageIsAsync || uncommitted === 0 || !lastSavedText) return;
+    if (!rescueOn || !storageIsAsync || uncommitted === 0 || !lastSavedText) return;
     const local = storage('local');
     if (!local || local === (persistStorage as unknown)) return;
     try {
@@ -2221,7 +2319,8 @@ function build<S extends object, A, KA, CV, E extends object = AnyEvents>(
   const corrupt = (why: string) => {
     if (warnedCorrupt) return;
     warnedCorrupt = true;
-    console.warn(
+    problem(
+      'storage',
       `[${name}] the saved state couldn't be read (${why}), so it was ignored and the initial values are used. The next save replaces it.`,
     );
   };
@@ -2245,7 +2344,8 @@ function build<S extends object, A, KA, CV, E extends object = AnyEvents>(
     if (from !== persistVersion) {
       rewrite = true;
       if (!persistCfg!.migrate) {
-        console.warn(
+        problem(
+          'storage',
           `[${name}] dropped saved state from version ${from}: no persist.migrate for version ${persistVersion}.`,
         );
         return null;
@@ -2253,7 +2353,10 @@ function build<S extends object, A, KA, CV, E extends object = AnyEvents>(
       try {
         values = persistCfg!.migrate(values, from);
       } catch (error) {
-        console.error(`[${name}] persist.migrate threw; starting from the initial state:`, error);
+        problem('storage', `[${name}] persist.migrate threw; starting from the initial state:`, {
+          level: 'error',
+          error,
+        });
         return null;
       }
     }
@@ -2302,7 +2405,7 @@ function build<S extends object, A, KA, CV, E extends object = AnyEvents>(
           finishHydration();
         },
         (error) => {
-          console.error(`[${name}] couldn't load persisted state:`, error);
+          problem('storage', `[${name}] couldn't load persisted state:`, { level: 'error', error });
           finishHydration();
         },
       );
@@ -2404,6 +2507,12 @@ function build<S extends object, A, KA, CV, E extends object = AnyEvents>(
   let past: Step[] = [];
   let future: Step[] = [];
   let stepSeq = 0;
+  /** Adds an undo step, keeping the last historyLimit. The usual case drops the oldest without copying the list */
+  function addStep(changes: Step['changes']) {
+    past.push({ changes, seq: stepSeq++ });
+    if (past.length === historyLimit + 1) past.shift();
+    else if (past.length > historyLimit) past = past.slice(-historyLimit); // unusual limits (fractions...): as before
+  }
   // batch(): changes made inside are collected here and saved as one undo step
   let batchDepth = 0;
   let batchChanges: Record<string, [unknown, unknown]> | null = null;
@@ -2447,7 +2556,7 @@ function build<S extends object, A, KA, CV, E extends object = AnyEvents>(
     // A key that ended where it started (a → b → a) is not a change
     for (const k of Object.keys(changes)) if (Object.is(changes[k][0], changes[k][1])) delete changes[k];
     if (Object.keys(changes).length === 0) return;
-    past = [...past, { changes, seq: stepSeq++ } as Step].slice(-historyLimit);
+    addStep(changes);
     future = [];
     updateHistoryInfo();
   }
@@ -2537,7 +2646,7 @@ function build<S extends object, A, KA, CV, E extends object = AnyEvents>(
     try {
       fn();
     } catch (error) {
-      console.error(`[${name}] ${what} threw an error:`, error);
+      problem('listener', `[${name}] ${what} threw an error:`, { level: 'error', error });
     }
   };
 
@@ -2550,7 +2659,7 @@ function build<S extends object, A, KA, CV, E extends object = AnyEvents>(
       // e.g. a function or class instance in state can't be sent to other tabs
       if (!warnedSync) {
         warnedSync = true;
-        console.warn(`[${name}] couldn't sync a change to other tabs:`, error);
+        problem('sync', `[${name}] couldn't sync a change to other tabs:`, { error });
       }
     }
   };
@@ -2625,8 +2734,8 @@ function build<S extends object, A, KA, CV, E extends object = AnyEvents>(
       }
       return;
     }
-    const changes = Object.fromEntries(tracked.map((k) => [k, [prev[k], state[k]]]));
-    past = [...past, { changes, seq: stepSeq++ } as Step].slice(-historyLimit);
+    const changes = Object.fromEntries(tracked.map((k) => [k, [prev[k], state[k]] as [unknown, unknown]]));
+    addStep(changes);
     future = [];
     updateHistoryInfo();
   }
@@ -2712,7 +2821,9 @@ function build<S extends object, A, KA, CV, E extends object = AnyEvents>(
   function getState(): V;
   function getState<K extends Key>(key: K): V[K];
   function getState(key?: string): unknown {
-    if (key !== undefined) return readKey(key);
+    // Store keys only: "__proto__", "constructor" or "toString" read as undefined, like any other unknown name. (The
+    // selector and computed readers already check; hooks reject unknown names.)
+    if (key !== undefined) return hasKey(key) ? readKey(key) : undefined;
     const derived = Object.keys(computedDefs).map((k) => [k, readComputed(k)]);
     const selected = Object.keys(queryDefs).map((k) => [k, readState(k)]);
     return { ...state, ...Object.fromEntries(selected), ...Object.fromEntries(derived) };
@@ -2895,7 +3006,7 @@ function build<S extends object, A, KA, CV, E extends object = AnyEvents>(
         (error) => {
           // The page is going away (reload, navigation) and the browser cancelled the request: it may
           // well have reached the server, so keep the change rather than roll it back (and save that)
-          if (!leavingPage) settle(false, error);
+          if (!leavingPage) void settle(false, error); // settle never rejects (its reloads are caught)
           throw error;
         },
       );
@@ -3090,7 +3201,11 @@ function build<S extends object, A, KA, CV, E extends object = AnyEvents>(
               m.aborted = true;
               setStatus(key, { loading: false, fetching: false });
             }
-          } else setStatus(key, { loading: false, fetching: false, error });
+          } else {
+            setStatus(key, { loading: false, fetching: false, error });
+            const why = (error as Error)?.message ?? String(error);
+            problem('query', `[${name}] couldn't load "${key}": ${why}`, { error, key, quiet: true });
+          }
           throw error;
         },
       )
@@ -3211,6 +3326,10 @@ function build<S extends object, A, KA, CV, E extends object = AnyEvents>(
           stamp.length !== 2 ||
           !Number.isSafeInteger(stamp[0]) ||
           stamp[0] < 0 ||
+          // A real tab's clock grows by one per write. Up to half the safe range anything goes (a new tab starts at 0);
+          // past it, a stamp may only be a bounded step ahead of this tab's clock. One hostile stamp near the limit
+          // would otherwise push every clock there, and no later write could be newer: sync would stop.
+          stamp[0] > Math.max(MAX_STAMP, clock + MAX_STAMP_STEP) ||
           typeof stamp[1] !== 'string'
         )
           return;
@@ -3292,10 +3411,21 @@ function build<S extends object, A, KA, CV, E extends object = AnyEvents>(
     }
   };
 
-  const saveCache = () => {
+  const writeCache = () => {
     if (!options.offline) return;
     const data = Object.fromEntries([...cache].filter(([, e]) => e.status === 'success'));
     writeOffline('queries', data);
+  };
+  // Entry changes come in bursts (fetching, then loaded, for many entries at once): one write per tick. A microtask
+  // runs before the browser does anything else, so the page can't go away in between.
+  let cacheWriteQueued = false;
+  const saveCache = () => {
+    if (!options.offline || cacheWriteQueued) return;
+    cacheWriteQueued = true;
+    queueMicrotask(() => {
+      cacheWriteQueued = false;
+      writeCache();
+    });
   };
   for (const [k, e] of Object.entries(trusted(readOffline<Entry>('queries'), 'offline', (key) => queryNameOf(key))))
     if (k.startsWith('query:') && e && typeof e === 'object' && e.data !== undefined)
@@ -3422,7 +3552,15 @@ function build<S extends object, A, KA, CV, E extends object = AnyEvents>(
     namedAborts.set(k, controller);
     const fail = (error: unknown): never => {
       const idle = { isFetching: false, fetchingNext: false };
-      if (!controller.signal.aborted) setEntry(k, { ...idle, error, status: 'error' });
+      if (!controller.signal.aborted) {
+        setEntry(k, { ...idle, error, status: 'error' });
+        const why = (error as Error)?.message ?? String(error);
+        problem('query', `[${name}] couldn't load "${queryNameOf(k)}": ${why}`, {
+          error,
+          key: queryNameOf(k),
+          quiet: true,
+        });
+      }
       // Aborted is a cancel, not a failure: keep any data, no error status.
       // After reset() the controller is gone: leave the fresh cache alone.
       else if (namedAborts.get(k) === controller)
@@ -3654,7 +3792,8 @@ function build<S extends object, A, KA, CV, E extends object = AnyEvents>(
   const onOnline = () => {
     // One after another, in the order they were queued: dependent saves (create, then edit) must reach the server in
     // that order. A task that fails doesn't stop the next one. A store destroyed meanwhile runs none of the rest.
-    queue
+    // The chain never rejects: run() and cancel() settle the caller's promise themselves.
+    void queue
       .splice(0)
       .reduce<Promise<void>>(
         (previous, task) => previous.then(() => (destroyed ? task.cancel(destroyedWhileWaiting()) : task.run())),
@@ -3709,6 +3848,9 @@ function build<S extends object, A, KA, CV, E extends object = AnyEvents>(
     queue.splice(0).forEach((task) => task.cancel(destroyedWhileWaiting()));
     entrySetters.clear();
     entrySelect.clear();
+    // A destroyed store leaves the by-name registry, so generated names don't keep stores alive (only if it is
+    // still this store: a newer store with the same name keeps its entry)
+    if (storesByName.get(name) === store) storesByName.delete(name);
     if (options.shared) {
       const slot = Symbol.for(`createStore:${name}`);
       const g = globalThis as unknown as Record<symbol, unknown>;
@@ -3731,7 +3873,7 @@ function build<S extends object, A, KA, CV, E extends object = AnyEvents>(
     const cachedKeys = [...cache.keys()];
     cachedKeys.forEach(releaseEntry);
     cache.clear();
-    saveCache();
+    writeCache(); // at once, not batched: reset() on sign-out must clear the per-user copy before anything else runs
     cachedKeys.forEach((k) => notify(entryChannel(k))); // components show the empty entry
     for (const m of metas.values())
       Object.assign(m, {
@@ -3945,7 +4087,7 @@ function build<S extends object, A, KA, CV, E extends object = AnyEvents>(
       // A mounting component also refreshes stale data it shows (no-op when fresh)
       const queries = new Set<string>();
       keys.forEach((k) => queryKeysOf(k, new Set(), queries));
-      queries.forEach((q) => loadKey(q).catch(() => {}));
+      queries.forEach((q) => void loadKey(q).catch(() => {}));
       return () => {
         keys.forEach((k) => {
           const n = (roots.get(k) ?? 1) - 1;

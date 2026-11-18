@@ -71,6 +71,7 @@ describe('mistakes in createStore() options', () => {
       onSaveStart: () => {},
       onSaveSuccess: () => {},
       onSaveError: () => {},
+      onError: () => {},
     };
     const warn = warnings();
     for (const key of declared) {
@@ -111,7 +112,8 @@ describe('mistakes in createStore() options', () => {
 
   it('a named store gets no such warning', () => {
     const warn = warnings();
-    createStore({ a: 1 }, { name: 'named-ok', persist: 'session', syncTabs: true });
+    // validate is set so the development-only "nothing checks the type" warning stays out of this test
+    createStore({ a: 1 }, { name: 'named-ok', persist: 'session', syncTabs: true, validate: () => true });
     expect(warn).not.toHaveBeenCalled();
   });
 

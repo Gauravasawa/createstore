@@ -232,7 +232,8 @@ describe('when saving fails, the developer is told once', () => {
 
   it('a normal save produces no warning', () => {
     const warn = quiet();
-    const s = createStore({ n: 0 }, { name: `ok-${uid()}`, persist: true });
+    // validate is set so the development-only "nothing checks the type" warning stays out of this test
+    const s = createStore({ n: 0 }, { name: `ok-${uid()}`, persist: true, validate: () => true });
     s.setState('n', 1);
     expect(warn).not.toHaveBeenCalled();
   });
@@ -264,7 +265,7 @@ describe('unreadable saved state is reported, not dropped silently', () => {
     const warn = quiet();
     const name = `fine-${uid()}`;
     localStorage.setItem(`${name}:state`, JSON.stringify({ $version: 0, state: { n: 5 } }));
-    const s = createStore({ n: 0 }, { name, persist: true });
+    const s = createStore({ n: 0 }, { name, persist: true, validate: () => true }); // validate: see above
     expect(s.getState('n')).toBe(5);
     expect(warn).not.toHaveBeenCalled();
   });

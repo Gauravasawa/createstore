@@ -101,8 +101,8 @@ describe('store keys that are not state', () => {
   // KNOWN ISSUE (src/createStore.ts:1442, `const state = { ...def.values }` is a normal object): getState('__proto__')
   // returns Object.prototype itself, and 'constructor' / 'toString' return the built-in functions. An app that passes a
   // user-controlled key to getState and then mutates the result pollutes every object. it.fails passes while the bug
-  // exists and starts FAILING when it is fixed: then change it.fails to it.
-  it.fails('getState returns undefined for names inherited from Object.prototype', () => {
+  // exists and starts FAILING when it is fixed: then change it.fails to it. Fixed (F-301): reads use own keys only.
+  it('getState returns undefined for names inherited from Object.prototype', () => {
     const s = createStore({ a: 1 }) as unknown as Loose;
     for (const k of NAMES) expect(s.getState(k), k).toBeUndefined();
   });
