@@ -30,6 +30,9 @@ The first release is `1.0.0`, so for now only the latest `1.x` is supported.
 ## Platform support
 
 - **Node.js:** 20 and newer (`engines` in `package.json`). CI runs Node 20, 22 and 24, plus Windows and macOS on 22.
+  Node 20 is past its end of life, but it stays supported for using the library: the library uses no Node-specific
+  feature, so dropping it would only break installs. It will be dropped in a major release, as below. Working on this
+  repository (lint, build and release tools) needs Node 22 or newer (`.nvmrc`).
 - **React:** 19 and newer (peer dependency).
 - A runtime is dropped only in a major release, announced in the release notes of the version before it.
 

@@ -19,6 +19,15 @@ export default tseslint.config(
       ],
     },
   },
+  // The shipped code: a promise nobody awaits or handles must be deliberate (marked with `void`)
+  {
+    files: ['src/**/*.{ts,tsx}'],
+    languageOptions: { parserOptions: { projectService: true, tsconfigRootDir: import.meta.dirname } },
+    rules: {
+      '@typescript-eslint/no-floating-promises': 'error',
+      '@typescript-eslint/no-misused-promises': 'error',
+    },
+  },
   // Tests deliberately probe misuse with loose types
   { files: ['spec/**', 'test/**'], rules: { '@typescript-eslint/no-explicit-any': 'off' } },
 );
