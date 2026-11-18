@@ -1,5 +1,24 @@
 # Changelog
 
+## [1.2.0](https://github.com/Gauravasawa/createstore/compare/v1.1.3...v1.2.0) (2026-11-18)
+
+### Features
+
+* add onError and persist.rescue, and harden reads, query keys and tab sync ([f6faf9f](https://github.com/Gauravasawa/createstore/commit/f6faf9f550dbb18ac719aa085fe248c18dc95f93))
+
+### Documentation
+
+* fix search results showing undefined and build the search index from the page ([13febb4](https://github.com/Gauravasawa/createstore/commit/13febb4b4b94df3e2a68a29cd983cea3fd4b2c71))
+* record why the minimatch alert can't be fixed yet ([d0feea8](https://github.com/Gauravasawa/createstore/commit/d0feea877c9e764a538366b6a2b9ad9dcd173fae)), closes [#2](https://github.com/Gauravasawa/createstore/issues/2)
+
+### Refactoring
+
+* type the store's internal values in one place ([7e0067a](https://github.com/Gauravasawa/createstore/commit/7e0067a3f8b8ee8844068d5bcec0042d65490eb4))
+
+### Build System
+
+* eslint 10, stricter TypeScript, type-aware lint, a coverage floor and an import-cycle test ([b4c11e9](https://github.com/Gauravasawa/createstore/commit/b4c11e9f2108ccdfffb7acd0e1304d4c093acb48))
+
 ## [1.1.3](https://github.com/Gauravasawa/createstore/compare/v1.1.2...v1.1.3) (2026-11-17)
 
 ### Bug Fixes
