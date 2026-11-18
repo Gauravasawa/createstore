@@ -159,10 +159,25 @@ try {
   check('theme choice is remembered (localStorage + the inline script)', (await theme()) !== before);
 
   await page.keyboard.press('/');
+  // Every result must show a real title and snippet: a name clash once made them all read "undefined"
+  const shown = () =>
+    page.$$eval('#search-results li', (lis) =>
+      lis.map((li) => [
+        li.querySelector('.r-title')?.textContent ?? '',
+        li.querySelector('.r-snip')?.textContent ?? '',
+      ]),
+    );
+  const readable = (rows) =>
+    // a title always; a snippet may be empty (FAQ has no intro text), but never the word undefined on its own
+    rows.length > 0 && rows.every(([t, s]) => t.trim() && t !== 'undefined' && s !== 'undefined');
+  const popular = await shown();
+  check('search opens with popular pages, each with a title and a snippet', readable(popular), JSON.stringify(popular));
   await page.locator('#search-input').fill('persist');
+  const found = await shown();
   check(
-    'search opens and returns results',
-    (await page.locator('#search-results li').count()) > 0 && (await page.locator('#search[open]').count()) === 1,
+    'search returns readable results, the first about the query',
+    (await page.locator('#search[open]').count()) === 1 && readable(found) && /persist/i.test(found[0].join(' ')),
+    JSON.stringify(found[0]),
   );
   // Escape inside a search box clears its text first, so a user (and this test) closes the dialog with its button
   await page.locator('#search-close').click();

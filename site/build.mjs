@@ -250,6 +250,46 @@ const sections = [...doc.querySelectorAll('section.doc-section[id]')].map((sec) 
     about: ABOUT[sec.id] ?? (sentence.length > 160 ? `${sentence.slice(0, 157)}...` : sentence),
   };
 });
+// The search index: one entry per section and per sub-heading with an id, made from the page on every build (it used
+// to be a hand-made copy that went stale). Text is what follows the heading up to the next one, capped at 700 characters.
+// Base64 in the page, so a host that processes script text can't alter it (no quotes, braces, backticks or dollars).
+const plainText = (node) =>
+  node.nodeType === 3
+    ? node.textContent
+    : node.nodeType !== 1 || hidden(node)
+      ? ''
+      : [...node.childNodes].map(plainText).join(' ');
+const textAfter = (heading, stopAt) => {
+  let text = '';
+  for (let n = heading.nextElementSibling; n && !stopAt.has(n.tagName) && text.length < 700; n = n.nextElementSibling)
+    text += ` ${plainText(n)}`;
+  return squash(text).slice(0, 700);
+};
+const searchIndex = [...doc.querySelectorAll('section.doc-section[id]')].flatMap((sec) => {
+  const title = squash(plainText(sec.querySelector('h2')));
+  const groupName = sec.getAttribute('data-group') ?? '';
+  const subs = [...sec.querySelectorAll('h3[id]')].map((h3) => ({
+    id: h3.id,
+    title: squash(plainText(h3)),
+    section: title,
+    group: groupName,
+    text: textAfter(h3, new Set(['H2', 'H3'])),
+  }));
+  return [
+    {
+      id: sec.id,
+      title,
+      section: '',
+      group: groupName,
+      text: textAfter(sec.querySelector('h2'), new Set(['H2', 'H3'])),
+    },
+    ...subs,
+  ];
+});
+if (!index.includes("atob('%%SEARCH_INDEX%%')"))
+  throw new Error("the page has no atob('%%SEARCH_INDEX%%') for the search index");
+index = index.replace('%%SEARCH_INDEX%%', () => Buffer.from(JSON.stringify(searchIndex), 'utf8').toString('base64'));
+
 const faq = [...doc.querySelectorAll('#faq h3')].map((h) => {
   const answer = [];
   for (let n = h.nextElementSibling; n && n.tagName !== 'H3'; n = n.nextElementSibling)
