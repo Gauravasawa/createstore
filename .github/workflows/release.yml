@@ -66,15 +66,10 @@ jobs:
         with:
           node-version-file: .nvmrc
       - run: npm ci --ignore-scripts
-      # 3 tries: the registry's key lookup fails now and then (EMISSINGSIGNATUREKEY); a really bad signature fails all
-      - name: npm audit signatures (3 tries)
-        run: |
-          for attempt in 1 2 3; do
-            npm audit signatures && exit 0
-            echo "::warning::npm audit signatures failed (attempt $attempt of 3)"
-            sleep 20
-          done
-          exit 1
+      # Registry signatures and provenance of everything installed. Only a missing registry key (EMISSINGSIGNATUREKEY,
+      # which can last minutes) is retried, for up to 5 minutes; a signature that doesn't match fails at once.
+      - name: npm audit signatures
+        run: node scripts/audit-signatures.mjs
       # Everything CI checks, on the exact commit being released
       - run: npm run verify
       - run: npm run test:release

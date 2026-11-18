@@ -41,8 +41,15 @@ jobs:
             [ "$i" = 5 ] && exit 1
             sleep 30
           done
-          # Registry signature and the provenance attestation of everything installed
-          npm audit signatures
+          # Registry signature and the provenance attestation of everything installed. This job has no checkout, so it
+          # can't use scripts/audit-signatures.mjs; same rule inline: only a missing registry key is retried.
+          for wait in 20 40 80 160 stop; do
+            if out=$(npm audit signatures 2>&1); then echo "$out"; break; fi
+            echo "$out"
+            if [ "$wait" = stop ] || ! grep -q EMISSINGSIGNATUREKEY <<< "$out"; then exit 1; fi
+            echo "::warning::the registry's signing key couldn't be found; trying again in $wait s"
+            sleep "$wait"
+          done
           node --input-type=module -e "import { createStore } from '@createstore/createstore'; if (typeof createStore !== 'function') process.exit(1)"
           node -e "if (typeof require('@createstore/createstore').createStore !== 'function') process.exit(1)"
           echo "### Post-release check passed for $V" >> "$GITHUB_STEP_SUMMARY"

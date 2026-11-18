@@ -83,6 +83,12 @@ If you are locked out of npm entirely, contact npm support. Keep your recovery c
    next version. The old tag stays as a git-only tag.
 4. Consumers are not affected beyond not being able to install new versions. Cached installs keep working.
 
+**A special case:** the `npm audit signatures` step fails with `EMISSINGSIGNATUREKEY` ("has attestations but no
+corresponding public key(s) can be found"). npm couldn't fetch the registry's signing key; the packages aren't at
+fault. `scripts/audit-signatures.mjs` already retries that error alone for about 5 minutes. If it still failed, the
+step ran before anything was published or tagged, so re-run the failed job once the registry is back. A different
+error from that step (a signature that doesn't match) is not this case: treat it as section 2.
+
 ## 7. An accidental unpublish
 
 1. Do not try to publish the same version again: npm never allows a name and version to be reused.
