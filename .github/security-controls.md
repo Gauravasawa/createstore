@@ -72,8 +72,17 @@ Accounts: use a passkey or hardware key for 2FA on GitHub and npm, and keep the 
 
 ## Known issues
 
-- `getState('__proto__')` (also `'constructor'`, `'toString'` and similar) returns `Object.prototype` or a built-in
-  function instead of `undefined`, because the state object is a normal object (`src/createStore.ts:1442`). The
-  library's own code cannot reach it; it matters to an app that passes a user-controlled key to `getState` and
-  mutates the result. Fix: build `state` on `Object.create(null)`. `spec/security.spec.ts` carries an `it.fails`
-  test that starts failing once it is fixed.
+- **Accepted: moderate advisories in release tooling.** `npm audit` reports moderate advisories for `glob` and
+  `minimatch`, which reach the repository only through `semantic-release` (its GitHub and npm plugins). They are dev
+  tooling: nothing of it ships in the package, and it runs only in the release job. npm's only offered fix is
+  downgrading `semantic-release` four major versions, which is a larger risk than the advisories. Recheck when
+  `semantic-release` updates those dependencies; the security gate fails on high and critical advisories only.
+- **Accepted until 2026-12-18: high advisory GHSA-fc5q-39xc-vjpf in `picomatch`** (ReDoS through crafted glob
+  patterns, every version up to 4.0.7, the latest). No fixed version exists yet. It is in dev tools only (vitest,
+  tsup, typescript-eslint, semantic-release) and every glob pattern they receive comes from this repository. The
+  exception lives in `scripts/check-audit.mjs` (`npm run audit:dev`), which the security workflow runs instead of
+  `npm audit --audit-level=high`: any other high or critical advisory still fails, and this one fails again after
+  its date. When picomatch ships a fix, update the lockfile and delete the exception.
+- Fixed: `getState('__proto__')` (also `'constructor'`, `'toString'` and similar) used to return `Object.prototype` or
+  a built-in function. Reads now use the store's own keys only, so any name that isn't a key reads as `undefined`
+  (`spec/security.spec.ts`).

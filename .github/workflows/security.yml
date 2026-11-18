@@ -32,8 +32,9 @@ jobs:
       - run: npm run check:lockfile
       # What consumers install (runtime deps): fails on high or critical
       - run: npm run audit:prod
-      # Dev tooling can run in CI and on maintainers' machines: also checked, high or critical
-      - run: npm audit --audit-level=high
+      # Dev tooling can run in CI and on maintainers' machines: also checked, high or critical. An advisory with no
+      # fix yet can be accepted for a few weeks, with its reason, in scripts/check-audit.mjs; then it fails again.
+      - run: npm run audit:dev
       # Registry signatures and provenance of everything installed. The registry's key lookup fails now and then
       # (EMISSINGSIGNATUREKEY), so it gets 3 tries; a really bad signature fails all of them.
       - name: npm audit signatures (3 tries)
