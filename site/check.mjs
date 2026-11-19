@@ -239,7 +239,7 @@ check(
     }
   }),
 );
-const sitemap = read('sitemap.xml');
+const sitemap = preview ? '' : read('sitemap.xml'); // preview builds (pull requests) have no sitemap
 check(
   'sitemap lists the home page and every section page',
   preview || sectionIds.every((id) => sitemap.includes(`<loc>${site}/${id}/</loc>`)),
